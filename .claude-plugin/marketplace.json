@@ -1,0 +1,35 @@
+{
+    "name": "gilchris market",
+    "owner": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    },
+    "license": "GPLv3",
+    "plugins": [
+        {
+            "name": "java-formatter",
+            "source": "./plugins/java-formatter",
+            "description": "Intellij IDEA 비스꾸무리한 느낌으로다가 java 코드를 정리해줌"
+        },
+        {
+            "name": "working-space",
+            "source": "./plugins/working-space",
+            "description": "GitHub 프로젝트들을 위한 작업 공간과 브랜치를 준비하는 스킬들"
+        },
+        {
+            "name": "create-pr-to-upstream",
+            "source": "./plugins/create-pr-to-upstream",
+            "description": "하위 git 프로젝트들에서 origin 브랜치를 upstream의 동일한 이름 브랜치로 PR 생성"
+        },
+        {
+            "name": "typescript-build-check",
+            "source": "./plugins/typescript-build-check",
+            "description": "TypeScript 프로젝트 코드 수정 완료 후 빌드 확인하는 훅 (Stop에서 호출)"
+        },
+        {
+            "name": "java-build-check",
+            "source": "./plugins/java-build-check",
+            "description": "Java 프로젝트 코드 수정 완료 후 빌드 확인하는 훅 (Stop에서 호출)"
+        }
+    ]
+}

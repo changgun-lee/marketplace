@@ -1,0 +1,9 @@
+{
+    "name": "create-pr-to-upstream",
+    "description": "하위 git 프로젝트들에서 origin 브랜치를 upstream의 동일한 이름 브랜치로 PR 생성",
+    "version": "1.0.0",
+    "author": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    }
+}
