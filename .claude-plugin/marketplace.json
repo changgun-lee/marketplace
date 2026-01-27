@@ -1,5 +1,5 @@
 {
-    "name": "gilchris market",
+    "name": "gilchris-market",
     "owner": {
         "name": "Changgun Lee",
         "email": "gilchris@estsoft.com"
@@ -30,6 +30,11 @@
             "name": "java-build-check",
             "source": "./plugins/java-build-check",
             "description": "Java 프로젝트 코드 수정 완료 후 빌드 확인하는 훅 (Stop에서 호출)"
+        },
+        {
+            "name": "self-reflection",
+            "source": "./plugins/self-reflection",
+            "description": "현재 세션 대화를 통해 개선 사항을 도출하고 제안하는 스킬"
         }
     ]
 }

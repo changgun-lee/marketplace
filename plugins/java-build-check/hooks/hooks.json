@@ -1,0 +1,16 @@
+{
+    "description": "Java 프로젝트 코드 수정 완료 후 Gradle로 빌드 확인하는 훅 (Stop에서 호출)",
+    "hooks": {
+        "Stop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/gradle-build-check.sh"
+                    }
+                ]
+            }
+        ]
+    }
+}

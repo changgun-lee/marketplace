@@ -1,0 +1,10 @@
+{
+    "name": "self-reflection",
+    "description": "현재 세션 대화를 통해 개선 사항을 도출하고 제안하는 스킬",
+    "version": "1.0.0",
+    "author": {
+        "name": "Alex McFadyen",
+        "email": "github@acmconsulting.eu"
+    },
+    "homepage": "https://gist.github.com/a-c-m/f4cead5ca125d2eaad073dfd71efbcfc"
+}

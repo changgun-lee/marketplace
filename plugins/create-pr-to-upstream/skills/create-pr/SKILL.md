@@ -63,6 +63,7 @@ disable-model-invocation: true
   2. 그 후 PR 생성
 - origin의 remote URL에서 owner 이름 추출 필요 (예: `changgun-lee`)
 - upstream의 remote URL에서 org/repo 이름 추출 필요 (예: `team-commdev/rounz-cms-api`)
+- **production을 target으로 PR 금지**: 반드시 동일한 이름의 브랜치로 보내야 함
 
 ## 예시 출력
 
