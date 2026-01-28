@@ -1,5 +1,5 @@
 {
-    "name": "make-working-space",
+    "name": "working-space",
     "description": "GitHub 프로젝트들을 위한 작업 공간과 브랜치를 준비하는 스킬. 작업 제목과 리파지토리 목록을 받아서 워크스페이스 폴더와 git worktree를 생성함. production 브랜치에서 작업 브랜치를 생성.",
     "version": "1.0.0",
     "author": {

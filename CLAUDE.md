@@ -39,12 +39,13 @@ marketplace/
 - **동작**: 코드 수정 완료 후 `npm run build` 또는 `tsc --noEmit` 실행
 - **조건**: `.ts` 또는 `.tsx` 파일이 수정된 경우에만 실행
 
-### 4. working-space (make-working-space)
+### 4. working-space
 - **설명**: GitHub 프로젝트 작업 공간 및 브랜치 관리
 - **타입**: Skill
 - **스킬 목록**:
-  - `/make-working-space:make` - 워크스페이스 폴더와 git worktree 생성
-  - `/make-working-space:add` - 기존 워크스페이스에 리파지토리 추가
+  - `/working-space:make` - 워크스페이스 폴더와 git worktree 생성
+  - `/working-space:add` - 기존 워크스페이스에 리파지토리 추가
+  - `/working-space:commit` - 하위 프로젝트들의 변경 사항을 커밋하고 push
 - **환경변수**:
   - `CLAUDE_WORKSPACE_ROOT`: 워크스페이스 루트 (기본: `~/workspaces`)
   - `CLAUDE_GITHUB_ROOT`: GitHub 프로젝트 루트 (기본: `~/github`)
