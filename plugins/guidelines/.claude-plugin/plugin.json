@@ -1,0 +1,9 @@
+{
+    "name": "guidelines",
+    "description": "코딩 가이드라인 제공",
+    "version": "1.0.0",
+    "author": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    }
+}

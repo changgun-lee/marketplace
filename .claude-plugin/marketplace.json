@@ -35,6 +35,11 @@
             "name": "self-reflection",
             "source": "./plugins/self-reflection",
             "description": "현재 세션 대화를 통해 개선 사항을 도출하고 제안하는 스킬"
+        },
+        {
+            "name": "guidelines",
+            "source": "./plugins/guidelines",
+            "description": "코딩 가이드라인 제공"
         }
     ]
 }
