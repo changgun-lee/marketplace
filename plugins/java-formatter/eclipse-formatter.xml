@@ -64,15 +64,15 @@
         <!-- 점(.) 연산자 앞에서 줄바꿈 -->
         <setting id="org.eclipse.jdt.core.formatter.wrap_before_selector_operator" value="true"/>
 
-        <!-- 메소드 인자/파라미터 줄바꿈: 괄호 시작 위치에 맞춤 -->
-        <!-- 1 (Wrap when necessary) + 16 (INDENT_ON_COLUMN) = 17 -->
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_method_invocation" value="17"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_parameters_in_method_declaration" value="17"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_explicit_constructor_call" value="17"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_allocation_expression" value="17"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_enum_constant" value="17"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="17"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_qualified_allocation_expression" value="17"/>
+        <!-- 메소드 인자/파라미터 줄바꿈: 120자 초과 시에만 줄바꿈 -->
+        <!-- 18 = M_COMPACT_SPLIT(16) + M_INDENT_ON_COLUMN(2) (여는 괄호 다음 칸에 맞춰 정렬) -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_method_invocation" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_parameters_in_method_declaration" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_explicit_constructor_call" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_allocation_expression" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_enum_constant" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_qualified_allocation_expression" value="18"/>
 
         <!-- 기타 일반적인 설정 -->
         <setting id="org.eclipse.jdt.core.formatter.lineSplit" value="120"/>
