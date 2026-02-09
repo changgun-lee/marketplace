@@ -3,7 +3,7 @@
 # PostToolUse hook에서 호출됨
 # 공백이 있는 경로도 지원 (newline 또는 단일 경로)
 
-FORMATTER_DIR="$HOME/.claude/utils/java-formatter"
+FORMATTER_DIR="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is not set}"
 FORMATTER_CONFIG="$FORMATTER_DIR/eclipse-formatter.xml"
 FORMATTER_JAVA="$FORMATTER_DIR/EclipseFormatter.java"
 
