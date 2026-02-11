@@ -23,6 +23,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class EclipseFormatter {
+    private static final String ENUM_OFF_TAG = "// @formatter:off // enum-constants-auto";
+    private static final String ENUM_ON_TAG = "// @formatter:on // enum-constants-auto";
+
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
             System.err.println("Usage: EclipseFormatter <config.xml> <file1.java> [file2.java ...]");
@@ -50,22 +53,28 @@ public class EclipseFormatter {
                 // 2단계: 중괄호 추가
                 String withBraces = addMissingBraces(withImports, options);
 
-                // 3단계: 포맷팅
+                // 3단계: enum 상수 영역에 @formatter:off 태그 삽입
+                String withEnumTags = wrapEnumConstantsWithFormatterOff(withBraces, options);
+
+                // 4단계: 포맷팅
                 TextEdit edit = formatter.format(
                     CodeFormatter.K_COMPILATION_UNIT | CodeFormatter.F_INCLUDE_COMMENTS,
-                    withBraces,
+                    withEnumTags,
                     0,
-                    withBraces.length(),
+                    withEnumTags.length(),
                     0,
                     System.lineSeparator()
                 );
 
-                String formatted = withBraces;
+                String formatted = withEnumTags;
                 if (edit != null) {
-                    IDocument document = new Document(withBraces);
+                    IDocument document = new Document(withEnumTags);
                     edit.apply(document);
                     formatted = document.get();
                 }
+
+                // 후처리: enum 상수용 @formatter:off/on 태그 제거
+                formatted = removeEnumFormatterTags(formatted);
 
                 // 후처리: stream(), builder() 등은 이전 줄에 붙임 (builder는 뒤 체이닝 유지)
                 formatted = fixMethodChainingStart(formatted);
@@ -139,6 +148,114 @@ public class EclipseFormatter {
         result = newInstancePattern.matcher(result).replaceAll("$1\n" + chainIndent + "$2");
 
         return result;
+    }
+
+    /**
+     * enum 상수 영역에 @formatter:off/on 태그를 자동 삽입하여 포맷팅에서 제외
+     * 익명 클래스 본문을 가진 enum 상수는 제외
+     */
+    private static String wrapEnumConstantsWithFormatterOff(String source, Map<String, String> options) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(source.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+
+        Map<String, String> compilerOptions = new HashMap<>();
+        compilerOptions.put("org.eclipse.jdt.core.compiler.source",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.source", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.compliance",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.compliance", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17"));
+        parser.setCompilerOptions(compilerOptions);
+
+        CompilationUnit cu = (CompilationUnit) parser.createAST(null);
+
+        List<int[]> regions = new ArrayList<>();
+
+        cu.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(EnumDeclaration node) {
+                List<?> constants = node.enumConstants();
+                if (constants.isEmpty()) {
+                    return true;
+                }
+
+                // 익명 클래스 본문을 가진 상수가 있으면 제외
+                for (Object obj : constants) {
+                    EnumConstantDeclaration constant = (EnumConstantDeclaration) obj;
+                    if (constant.getAnonymousClassDeclaration() != null) {
+                        return true;
+                    }
+                }
+
+                EnumConstantDeclaration first = (EnumConstantDeclaration) constants.get(0);
+                EnumConstantDeclaration last = (EnumConstantDeclaration) constants.get(constants.size() - 1);
+
+                // 한 줄짜리 enum은 제외
+                String constantsText = source.substring(first.getStartPosition(),
+                    last.getStartPosition() + last.getLength());
+                if (!constantsText.contains("\n")) {
+                    return true;
+                }
+
+                // 이미 @formatter:off로 보호되어 있으면 제외
+                int enumBodyStart = node.getStartPosition();
+                String beforeConstants = source.substring(enumBodyStart, first.getStartPosition());
+                if (beforeConstants.contains("@formatter:off")) {
+                    return true;
+                }
+
+                // @formatter:off 삽입 위치: 첫 번째 상수의 줄 시작
+                int offPos = source.lastIndexOf('\n', first.getStartPosition() - 1) + 1;
+
+                // @formatter:on 삽입 위치: 세미콜론 또는 닫는 중괄호 다음 줄
+                int lastEnd = last.getStartPosition() + last.getLength();
+                int onPos = lastEnd;
+
+                for (int i = lastEnd; i < source.length(); i++) {
+                    char c = source.charAt(i);
+                    if (c == ';') {
+                        int nextNewline = source.indexOf('\n', i);
+                        onPos = (nextNewline != -1) ? nextNewline + 1 : source.length();
+                        break;
+                    } else if (c == '}') {
+                        onPos = source.lastIndexOf('\n', i - 1) + 1;
+                        break;
+                    } else if (c == ',' || Character.isWhitespace(c)) {
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+
+                regions.add(new int[]{offPos, onPos});
+                return true;
+            }
+        });
+
+        if (regions.isEmpty()) {
+            return source;
+        }
+
+        // 역순으로 정렬 (뒤에서부터 삽입해야 위치가 어긋나지 않음)
+        regions.sort((a, b) -> b[0] - a[0]);
+
+        StringBuilder sb = new StringBuilder(source);
+        for (int[] region : regions) {
+            sb.insert(region[1], ENUM_ON_TAG + "\n");
+            sb.insert(region[0], ENUM_OFF_TAG + "\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 자동 삽입된 enum 상수용 @formatter:off/on 태그 제거
+     */
+    private static String removeEnumFormatterTags(String formatted) {
+        formatted = formatted.replaceAll("[ \\t]*" + Pattern.quote(ENUM_OFF_TAG) + "\\r?\\n", "");
+        formatted = formatted.replaceAll("[ \\t]*" + Pattern.quote(ENUM_ON_TAG) + "\\r?\\n", "");
+        return formatted;
     }
 
     /**
