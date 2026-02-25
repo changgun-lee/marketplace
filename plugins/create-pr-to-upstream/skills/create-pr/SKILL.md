@@ -34,7 +34,7 @@ disable-model-invocation: true
    - 없으면 upstream/production (또는 main/master)에서 브랜치 생성 필요
 
 4. **PR 제목 결정**:
-   - 현재 작업 디렉토리 이름과 프로젝트(리포지토리) 이름이 같으면: `<branch-name>`을 가공하여 PR 제목으로 사용
+   - 현재 작업 디렉토리 이름이 프로젝트(리포지토리) 이름이 비슷하면: `<branch-name>`을 가공하여 PR 제목으로 사용
      - `feature/`, `fix/` 등 prefix 제거 (예: `feature/add-login` → `add-login`)
      - `-`를 공백으로 치환 (예: `add-login` → `add login`)
    - 다르면: `<현재 작업 디렉토리 이름>`을 PR 제목으로 사용
