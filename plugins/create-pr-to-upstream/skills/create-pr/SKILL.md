@@ -59,9 +59,8 @@ disable-model-invocation: true
 ## 주의사항
 
 - **upstream에 직접 push 금지**: origin에서 upstream으로 PR을 생성해야 함
-- upstream에 이미 동일 브랜치가 push되어 있으면:
-  1. upstream 브랜치를 base 브랜치(production/main)로 force reset
-  2. 그 후 PR 생성
+- upstream에 이미 동일 브랜치가 push되어 있어도 신규 변경사항만 담음 PR 생성
+- 아직 열려있는 PR이 있다면 작업중지
 - origin의 remote URL에서 owner 이름 추출 필요 (예: `changgun-lee`)
 - upstream의 remote URL에서 org/repo 이름 추출 필요 (예: `team-commdev/rounz-cms-api`)
 - **production을 target으로 PR 금지**: 반드시 동일한 이름의 브랜치로 보내야 함
