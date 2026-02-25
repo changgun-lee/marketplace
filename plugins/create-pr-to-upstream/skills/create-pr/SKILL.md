@@ -1,13 +1,13 @@
 ---
 name: create-pr
-description: 하위 git 프로젝트들에서 origin 브랜치를 upstream의 동일한 이름 브랜치로 PR 생성 (github-cli 필요. brew install gh)
+description: 현재 및 하위 git 프로젝트들에서 origin 브랜치를 upstream의 동일한 이름 브랜치로 PR 생성 (github-cli 필요. brew install gh)
 argument-hint: [reviewers (comma-separated)]
 disable-model-invocation: true
 ---
 
 # 하위 프로젝트 PR 일괄 생성
 
-현재 디렉토리의 하위 git 프로젝트들에서 **origin → upstream** 동일 브랜치로 PR을 생성합니다.
+현재 디렉토리 및 하위 git 프로젝트들에서 **origin → upstream** 동일 브랜치로 PR을 생성합니다.
 
 ## 사용법
 
@@ -33,27 +33,28 @@ disable-model-invocation: true
    - upstream에 동일한 이름의 브랜치가 있는지 확인
    - 없으면 upstream/production (또는 main/master)에서 브랜치 생성 필요
 
-4. **PR 생성** (gh CLI 사용):
+4. **PR 제목 결정**:
+   - 현재 작업 디렉토리 이름과 프로젝트(리포지토리) 이름이 같으면: `<branch-name>`을 가공하여 PR 제목으로 사용
+     - `feature/`, `fix/` 등 prefix 제거 (예: `feature/add-login` → `add-login`)
+     - `-`를 공백으로 치환 (예: `add-login` → `add login`)
+   - 다르면: `<현재 작업 디렉토리 이름>`을 PR 제목으로 사용
+
+5. **PR 생성** (gh CLI 사용):
    ```bash
    gh pr create \
      --repo <upstream-org>/<repo-name> \
      --head <origin-owner>:<branch-name> \
      --base <branch-name> \
-     --title "<현재 작업 디렉토리 이름>" \
+     --title "<PR 제목>" \
      --reviewer <reviewers> \
      --body "$(cat <<'EOF'
    ## Summary
    - <프로젝트별 변경사항 요약>
-
-   ## Test plan
-   - [ ] 테스트 항목
-
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
    EOF
    )"
    ```
 
-5. **결과 출력**: 생성된 PR URL 목록을 테이블 형식으로 출력
+6. **결과 출력**: 생성된 PR 제목과 URL 목록을 출력
 
 ## 주의사항
 
@@ -68,8 +69,7 @@ disable-model-invocation: true
 ## 예시 출력
 
 ```
-| 프로젝트 | PR URL |
-|---------|--------|
-| rounz-cms-api | https://github.com/team-commdev/rounz-cms-api/pull/184 |
-| rounz-cms-worker | https://github.com/team-commdev/rounz-cms-worker/pull/168 |
+<PR 제목>
+https://github.com/team-commdev/rounz-cms-api/pull/184
+https://github.com/team-commdev/rounz-cms-worker/pull/168
 ```
