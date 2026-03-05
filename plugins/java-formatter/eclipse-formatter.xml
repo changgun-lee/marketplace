@@ -64,18 +64,18 @@
         <!-- 점(.) 연산자 앞에서 줄바꿈 -->
         <setting id="org.eclipse.jdt.core.formatter.wrap_before_selector_operator" value="true"/>
 
-        <!-- 메소드 선언부 파라미터: 여는 괄호 다음 칸에 맞춰 정렬 -->
-        <!-- 18 = M_COMPACT_SPLIT(16) + M_INDENT_ON_COLUMN(2) -->
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_parameters_in_method_declaration" value="18"/>
+        <!-- 메소드 선언부 파라미터: 줄이 넘칠 때 각 파라미터를 한 줄에 하나씩, 여는 괄호 다음 칸에 맞춰 정렬 -->
+        <!-- 50 = M_ONE_PER_LINE_SPLIT(48) + M_INDENT_ON_COLUMN(2) -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_parameters_in_method_declaration" value="50"/>
 
-        <!-- 메소드 호출부 인자: continuation indent 사용 (기본 +8칸) -->
-        <!-- 16 = M_COMPACT_SPLIT(16) + M_INDENT_DEFAULT(0) -->
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_method_invocation" value="16"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_explicit_constructor_call" value="16"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_allocation_expression" value="16"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_enum_constant" value="16"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="16"/>
-        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_qualified_allocation_expression" value="16"/>
+        <!-- 메소드 호출부 인자: 줄이 넘칠 때 각 인자를 한 줄에 하나씩 배치 -->
+        <!-- 48 = M_ONE_PER_LINE_SPLIT(48) + M_INDENT_DEFAULT(0) -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_method_invocation" value="48"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_explicit_constructor_call" value="48"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_allocation_expression" value="48"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_enum_constant" value="48"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="48"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_qualified_allocation_expression" value="48"/>
 
         <!-- 기타 일반적인 설정 -->
         <setting id="org.eclipse.jdt.core.formatter.lineSplit" value="120"/>
