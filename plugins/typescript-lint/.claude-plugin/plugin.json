@@ -1,0 +1,9 @@
+{
+    "name": "typescript-lint",
+    "description": "Typescript 파일 수정 후 lint 실행",
+    "version": "1.0.0",
+    "author": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    }
+}

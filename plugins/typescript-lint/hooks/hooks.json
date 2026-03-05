@@ -1,0 +1,16 @@
+{
+    "description": "TypeScript 파일 편집 후 lint + format 자동 실행",
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/typescript-lint.sh"
+                    }
+                ]
+            }
+        ]
+    }
+}
