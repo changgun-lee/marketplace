@@ -52,15 +52,26 @@ if [[ -n "$HAS_FORMAT" ]]; then
         echo "$FORMAT_OUTPUT" | tail -30
         exit 2
     fi
-else
-    # prettier가 devDependencies에 있으면 직접 실행
+fi
+
+# prettier가 프로젝트에 있으면 실행 (format 스크립트와 별도로)
+if [[ -z "$HAS_FORMAT" ]]; then
     HAS_PRETTIER=$(jq -r '.devDependencies.prettier // .dependencies.prettier // empty' package.json 2>/dev/null)
+    if [[ -z "$HAS_PRETTIER" ]]; then
+        # 설정 파일로도 확인
+        for rc in .prettierrc .prettierrc.json .prettierrc.yml .prettierrc.yaml .prettierrc.js .prettierrc.cjs .prettierrc.mjs prettier.config.js prettier.config.cjs prettier.config.mjs .prettierrc.toml; do
+            if [[ -f "$rc" ]]; then
+                HAS_PRETTIER="config"
+                break
+            fi
+        done
+    fi
     if [[ -n "$HAS_PRETTIER" ]]; then
-        FORMAT_OUTPUT=$(npx prettier --write "$FILE_PATH" 2>&1)
-        FORMAT_EXIT=$?
-        if [[ $FORMAT_EXIT -ne 0 ]]; then
+        PRETTIER_OUTPUT=$(npx prettier --write "$FILE_PATH" 2>&1)
+        PRETTIER_EXIT=$?
+        if [[ $PRETTIER_EXIT -ne 0 ]]; then
             echo "Prettier 오류:"
-            echo "$FORMAT_OUTPUT" | tail -30
+            echo "$PRETTIER_OUTPUT" | tail -30
             exit 2
         fi
     fi
