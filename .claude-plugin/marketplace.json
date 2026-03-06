@@ -40,6 +40,11 @@
             "name": "guidelines",
             "source": "./plugins/guidelines",
             "description": "코딩 가이드라인 제공"
+        },
+        {
+            "name": "typescript-lint",
+            "source": "./plugins/typescript-lint",
+            "description": "Typescript 프로젝트 코드 수정 완료 후 eslint와 prettier 실행하는 훅"
         }
     ]
 }
