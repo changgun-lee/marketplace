@@ -45,6 +45,11 @@
             "name": "typescript-lint",
             "source": "./plugins/typescript-lint",
             "description": "Typescript 프로젝트 코드 수정 완료 후 eslint와 prettier 실행하는 훅"
+        },
+        {
+            "name": "squash",
+            "source": "./plugins/squash",
+            "description": "현재 프로젝트 및 하위 프로젝트들에서 아직 push되지 않은 커밋들을 squash하여 하나의 커밋으로 합치는 스킬"
         }
     ]
 }

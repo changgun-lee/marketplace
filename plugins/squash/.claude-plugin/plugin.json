@@ -1,0 +1,9 @@
+{
+    "name": "squash",
+    "description": "현재 프로젝트 및 하위 프로젝트들에서 아직 push되지 않은 커밋들을 squash하여 하나의 커밋으로 합치는 스킬",
+    "version": "1.0.0",
+    "author": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    }
+}

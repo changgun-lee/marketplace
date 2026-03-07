@@ -15,7 +15,9 @@ marketplace/
 │   ├── working-space/        # Git 작업 공간 관리
 │   ├── create-pr-to-upstream/ # PR 일괄 생성
 │   ├── self-reflection/      # 설정 개선 제안
-│   └── guidelines/           # 코딩 가이드라인
+│   ├── guidelines/           # 코딩 가이드라인
+│   ├── typescript-lint/      # TypeScript lint & format 훅
+│   └── squash/               # Git squash (미push 커밋 합치기)
 └── CLAUDE.md
 ```
 
@@ -68,6 +70,19 @@ marketplace/
 - **스킬 목록**:
   - `/guidelines:java` - Java 코딩 가이드라인 (들여쓰기, StringUtils, CollectionUtils, Querydsl 등)
 - **특징**: 수동 호출 전용 (`disable-model-invocation: true`)
+
+### 8. typescript-lint
+- **설명**: TypeScript 파일 수정 후 ESLint와 Prettier 자동 실행
+- **타입**: Hook (PostToolUse)
+- **트리거**: Edit 또는 Write 도구로 `.ts`/`.tsx` 파일 수정 후
+- **동작**: `npm run lint -- --fix`, `npm run format`, 또는 `npx prettier --write` 실행
+- **조건**: package.json에 lint/format 스크립트 또는 prettier 설정이 있는 경우
+
+### 9. squash
+- **설명**: 현재 프로젝트 및 하위 프로젝트들에서 미push 커밋을 squash하여 하나로 합침
+- **타입**: Skill
+- **스킬**: `/squash:squash "커밋 메시지 제목"`
+- **특징**: 수동 호출 전용, main/master/production 브랜치 보호
 
 ## 플러그인 개발 가이드
 
