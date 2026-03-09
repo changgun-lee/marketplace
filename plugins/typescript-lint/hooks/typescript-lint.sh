@@ -30,10 +30,19 @@ done
 
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
-# lint 스크립트 확인 및 실행
-HAS_LINT=$(jq -r '.scripts.lint // empty' package.json 2>/dev/null)
-if [[ -n "$HAS_LINT" ]]; then
-    LINT_OUTPUT=$(npm run lint -- --fix "$FILE_PATH" 2>&1)
+# ESLint가 프로젝트에 있으면 해당 파일만 lint 실행
+HAS_ESLINT=$(jq -r '.devDependencies.eslint // .dependencies.eslint // empty' package.json 2>/dev/null)
+if [[ -z "$HAS_ESLINT" ]]; then
+    # eslint 설정 파일로도 확인
+    for rc in eslint.config.js eslint.config.mjs eslint.config.cjs .eslintrc .eslintrc.js .eslintrc.cjs .eslintrc.json .eslintrc.yml .eslintrc.yaml; do
+        if [[ -f "$rc" ]]; then
+            HAS_ESLINT="config"
+            break
+        fi
+    done
+fi
+if [[ -n "$HAS_ESLINT" ]]; then
+    LINT_OUTPUT=$(npx eslint --fix "$FILE_PATH" 2>&1)
     LINT_EXIT=$?
     if [[ $LINT_EXIT -ne 0 ]]; then
         echo "ESLint 오류:"
@@ -42,38 +51,24 @@ if [[ -n "$HAS_LINT" ]]; then
     fi
 fi
 
-# format 스크립트 확인 및 실행
-HAS_FORMAT=$(jq -r '.scripts.format // empty' package.json 2>/dev/null)
-if [[ -n "$HAS_FORMAT" ]]; then
-    FORMAT_OUTPUT=$(npm run format -- "$FILE_PATH" 2>&1)
-    FORMAT_EXIT=$?
-    if [[ $FORMAT_EXIT -ne 0 ]]; then
-        echo "Format 오류:"
-        echo "$FORMAT_OUTPUT" | tail -30
-        exit 2
-    fi
-fi
-
-# prettier가 프로젝트에 있으면 실행 (format 스크립트와 별도로)
-if [[ -z "$HAS_FORMAT" ]]; then
-    HAS_PRETTIER=$(jq -r '.devDependencies.prettier // .dependencies.prettier // empty' package.json 2>/dev/null)
-    if [[ -z "$HAS_PRETTIER" ]]; then
-        # 설정 파일로도 확인
-        for rc in .prettierrc .prettierrc.json .prettierrc.yml .prettierrc.yaml .prettierrc.js .prettierrc.cjs .prettierrc.mjs prettier.config.js prettier.config.cjs prettier.config.mjs .prettierrc.toml; do
-            if [[ -f "$rc" ]]; then
-                HAS_PRETTIER="config"
-                break
-            fi
-        done
-    fi
-    if [[ -n "$HAS_PRETTIER" ]]; then
-        PRETTIER_OUTPUT=$(npx prettier --write "$FILE_PATH" 2>&1)
-        PRETTIER_EXIT=$?
-        if [[ $PRETTIER_EXIT -ne 0 ]]; then
-            echo "Prettier 오류:"
-            echo "$PRETTIER_OUTPUT" | tail -30
-            exit 2
+# Prettier가 프로젝트에 있으면 해당 파일만 format 실행
+HAS_PRETTIER=$(jq -r '.devDependencies.prettier // .dependencies.prettier // empty' package.json 2>/dev/null)
+if [[ -z "$HAS_PRETTIER" ]]; then
+    # prettier 설정 파일로도 확인
+    for rc in .prettierrc .prettierrc.json .prettierrc.yml .prettierrc.yaml .prettierrc.js .prettierrc.cjs .prettierrc.mjs prettier.config.js prettier.config.cjs prettier.config.mjs .prettierrc.toml; do
+        if [[ -f "$rc" ]]; then
+            HAS_PRETTIER="config"
+            break
         fi
+    done
+fi
+if [[ -n "$HAS_PRETTIER" ]]; then
+    PRETTIER_OUTPUT=$(npx prettier --write "$FILE_PATH" 2>&1)
+    PRETTIER_EXIT=$?
+    if [[ $PRETTIER_EXIT -ne 0 ]]; then
+        echo "Prettier 오류:"
+        echo "$PRETTIER_OUTPUT" | tail -30
+        exit 2
     fi
 fi
 
