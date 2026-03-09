@@ -36,7 +36,21 @@ for dir in */; do
 done
 ```
 
-### 3단계: 각 프로젝트별 미push 커밋 확인
+### 3단계: 커밋되지 않은 변경사항 처리
+
+각 대상 프로젝트에서 커밋되지 않은 변경사항(unstaged/staged)이 있는지 확인합니다:
+
+```bash
+# 변경사항 확인 (staged + unstaged + untracked)
+git status --porcelain
+```
+
+변경사항이 있는 경우:
+1. 모든 변경사항을 staging (`git add -A`)
+2. 임시 커밋 메시지로 커밋 (`git commit -m "WIP: uncommitted changes"`)
+3. 이후 squash 단계에서 다른 미push 커밋들과 함께 하나로 합쳐집니다
+
+### 4단계: 각 프로젝트별 미push 커밋 확인
 
 각 대상 프로젝트에서 현재 브랜치의 미push 커밋을 확인합니다:
 
@@ -55,7 +69,7 @@ git log @{upstream}..HEAD --oneline
 - `origin/<현재브랜치>`도 없는 경우: 해당 프로젝트는 건너뜀 (경고 출력)
 - 미push 커밋이 0개인 프로젝트는 건너뜁니다
 
-### 4단계: 사용자 확인
+### 5단계: 사용자 확인
 
 AskUserQuestion으로 squash 대상을 보여주고 확인을 받습니다:
 
@@ -64,7 +78,7 @@ AskUserQuestion으로 squash 대상을 보여주고 확인을 받습니다:
 - 해당 프로젝트의 미push 커밋 수와 목록
 - squash 후 사용할 커밋 메시지
 
-### 5단계: Squash 실행
+### 6단계: Squash 실행
 
 각 프로젝트에서 다음을 수행합니다:
 
@@ -81,7 +95,7 @@ git commit -m "커밋메시지제목"
 
 **중요**: `git reset --soft`를 사용하면 파일 변경 내용은 유지하면서 커밋만 합칩니다.
 
-### 6단계: 결과 요약
+### 7단계: 결과 요약
 
 모든 프로젝트 처리 후 결과를 출력합니다:
 
@@ -92,6 +106,6 @@ git commit -m "커밋메시지제목"
 ## 주의사항
 
 - **push는 자동으로 하지 않습니다**. squash 후 사용자가 직접 확인하고 push해야 합니다.
-- 커밋되지 않은 변경사항(unstaged/staged)이 있는 프로젝트는 건너뛰고 경고합니다.
+- 커밋되지 않은 변경사항(unstaged/staged/untracked)이 있는 프로젝트는 먼저 자동으로 커밋한 후 squash합니다.
 - main, master, production 브랜치에서는 squash를 실행하지 않습니다. 경고를 출력하고 건너뜁니다.
 - `git reset --soft`는 되돌릴 수 있습니다 (`git reflog`로 이전 상태 확인 가능).
