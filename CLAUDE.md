@@ -75,8 +75,8 @@ marketplace/
 - **설명**: TypeScript 파일 수정 후 ESLint와 Prettier 자동 실행
 - **타입**: Hook (PostToolUse)
 - **트리거**: Edit 또는 Write 도구로 `.ts`/`.tsx` 파일 수정 후
-- **동작**: `npm run lint -- --fix`, `npm run format`, 또는 `npx prettier --write` 실행
-- **조건**: package.json에 lint/format 스크립트 또는 prettier 설정이 있는 경우
+- **동작**: `npx eslint --fix`, `npx prettier --write` 실행. 파일이 변경되면 JSON stdout으로 Claude에게 알림
+- **조건**: package.json에 eslint/prettier 의존성 또는 설정 파일이 있는 경우
 
 ### 9. squash
 - **설명**: 현재 프로젝트 및 하위 프로젝트들에서 미push 커밋을 squash하여 하나로 합침
@@ -125,9 +125,43 @@ plugin-name/
 
 ### 훅 스크립트 종료 코드
 
-- `0`: 성공 (계속 진행)
-- `2`: 블로킹 에러 (Claude에게 피드백 전달)
-- 기타: 비블로킹 에러
+- `0`: 성공 (stdout의 JSON이 파싱됨)
+- `2`: 블로킹 에러 (stdout은 평문 텍스트로 Claude에게 전달, JSON 무시)
+- 기타: 비블로킹 에러 (stderr만 verbose 모드에 표시)
+
+### 훅에서 Claude에게 피드백 전달 (JSON stdout)
+
+`exit 0`으로 종료하면서 stdout에 JSON을 출력하면 Claude가 구조화된 피드백을 받습니다.
+
+```bash
+# 파일 변경 알림 예시 (PostToolUse)
+jq -n '{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "lint/format으로 파일이 수정되었습니다. 변경된 파일을 다시 읽어주세요."
+  }
+}'
+exit 0
+```
+
+```bash
+# 블로킹 결정 예시 - Claude에게 문제를 알리고 중단 요청
+jq -n '{
+  "decision": "block",
+  "reason": "ESLint 에러가 있습니다. 수정해주세요."
+}'
+exit 0
+```
+
+**주요 JSON 필드:**
+
+| 필드 | 설명 |
+|------|------|
+| `decision` | `"block"` 시 Claude에게 reason 표시 |
+| `reason` | decision이 block일 때 표시할 메시지 |
+| `hookSpecificOutput.additionalContext` | Claude에게 전달할 추가 컨텍스트 |
+| `continue` | `false`면 Claude 실행 중단 |
+| `stopReason` | continue가 false일 때 사용자에게 표시할 이유 |
 
 ### 스킬 SKILL.md 프론트매터
 
