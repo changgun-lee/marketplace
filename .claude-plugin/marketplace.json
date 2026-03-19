@@ -50,6 +50,11 @@
             "name": "squash",
             "source": "./plugins/squash",
             "description": "현재 프로젝트 및 하위 프로젝트들에서 아직 push되지 않은 커밋들을 squash하여 하나의 커밋으로 합치는 스킬"
+        },
+        {
+            "name": "remember",
+            "source": "./plugins/remember",
+            "description": "현재 디렉토리에 MEMORY.md 파일로 기억할 내용을 저장하는 스킬"
         }
     ]
 }

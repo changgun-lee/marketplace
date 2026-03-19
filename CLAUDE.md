@@ -17,7 +17,8 @@ marketplace/
 │   ├── self-reflection/      # 설정 개선 제안
 │   ├── guidelines/           # 코딩 가이드라인
 │   ├── typescript-lint/      # TypeScript lint & format 훅
-│   └── squash/               # Git squash (미push 커밋 합치기)
+│   ├── squash/               # Git squash (미push 커밋 합치기)
+│   └── remember/             # 현재 디렉토리에 기억 저장
 └── CLAUDE.md
 ```
 
@@ -83,6 +84,13 @@ marketplace/
 - **타입**: Skill
 - **스킬**: `/squash:squash "커밋 메시지 제목"`
 - **특징**: 수동 호출 전용, main/master/production 브랜치 보호
+
+### 10. remember
+- **설명**: 현재 디렉토리에 `*-MEMORY.md` 파일로 기억할 내용 저장
+- **타입**: Skill
+- **스킬**: `/remember:remember`
+- **모드 1**: 대화 중 "기억해줘" 등의 표현으로 특정 내용 저장 → `{주제}-MEMORY.md`
+- **모드 2**: `/remember` 직접 호출 시 현재 세션 요약 저장 → `session-{날짜}-{주제}-MEMORY.md`
 
 ## 플러그인 개발 가이드
 

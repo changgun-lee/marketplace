@@ -1,0 +1,9 @@
+{
+  "name": "remember",
+  "description": "현재 디렉토리에 MEMORY.md 파일로 기억할 내용을 저장",
+  "version": "1.0.0",
+  "author": {
+    "name": "Changgun Lee",
+    "email": "gilchris@estsoft.com"
+  }
+}
