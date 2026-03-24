@@ -17,16 +17,16 @@ $ARGUMENTS 형식: `"작업 제목" "리파지토리1, 리파지토리2, ..."`
 
 ## 경로 정보
 
-- **워크스페이스 루트**: `$CLAUDE_WORKSPACE_ROOT` (환경변수 미설정 시 `~/workspaces`)
-- **GitHub 프로젝트 루트**: `$CLAUDE_GITHUB_ROOT` (환경변수 미설정 시 `~/github`)
+- **워크스페이스 루트**: `$CLAUDE_WORKSPACE_ROOT` (환경변수 미설정 시 `$HOME/workspaces`)
+- **GitHub 프로젝트 루트**: `$CLAUDE_GITHUB_ROOT` (환경변수 미설정 시 `$HOME/github`)
 - **브랜치 생성 스크립트**: `${CLAUDE_PLUGIN_ROOT}/scripts/make-working-branch.sh`
 
 ## 작업 순서
 
 ### 0단계: 경로 변수 설정
 ```bash
-WORKSPACE_ROOT="${CLAUDE_WORKSPACE_ROOT:-~/workspaces}"
-GITHUB_ROOT="${CLAUDE_GITHUB_ROOT:-~/github}"
+WORKSPACE_ROOT="${CLAUDE_WORKSPACE_ROOT:-$HOME/workspaces}"
+GITHUB_ROOT="${CLAUDE_GITHUB_ROOT:-$HOME/github}"
 ```
 
 ### 1단계: 인자 파싱

@@ -17,8 +17,8 @@ $ARGUMENTS 형식: `"작업 이름" "리파지토리 이름"`
 
 ## 경로 정보
 
-- **워크스페이스 루트**: `${CLAUDE_WORKSPACE_ROOT:-~/workspaces}`
-- **GitHub 프로젝트 루트**: `${CLAUDE_GITHUB_ROOT:-~/github}`
+- **워크스페이스 루트**: `${CLAUDE_WORKSPACE_ROOT:-$HOME/workspaces}`
+- **GitHub 프로젝트 루트**: `${CLAUDE_GITHUB_ROOT:-$HOME/github}`
 - **브랜치 생성 스크립트**: `${CLAUDE_PLUGIN_ROOT}/scripts/make-working-branch.sh`
 
 ## 작업 순서
