@@ -23,23 +23,25 @@ disable-model-invocation: true
 
 1. **하위 프로젝트 탐색**: 현재 디렉토리 바로 아래에서 `.git` 폴더가 있는 디렉토리 찾기
 
-2. **각 프로젝트별로 다음 수행**:
+2. **변경된 프로젝트만 대상으로 선정**: 각 프로젝트에서 `git diff origin/<branch>..HEAD`로 origin 대비 변경사항이 있는 프로젝트만 PR 생성 대상으로 선정 (변경사항이 없는 프로젝트는 건너뜀)
+
+3. **각 대상 프로젝트별로 다음 수행**:
    - `git branch --show-current`로 현재 브랜치 확인
    - `git remote -v`로 origin과 upstream 원격 저장소 확인
    - `git status --short`로 커밋되지 않은 변경사항 확인 (있으면 경고)
    - `git log --oneline -3`으로 최근 커밋 확인
 
-3. **PR 생성 전 확인**:
+4. **PR 생성 전 확인**:
    - upstream에 동일한 이름의 브랜치가 있는지 확인
    - 없으면 upstream/production (또는 main/master)에서 브랜치 생성 필요
 
-4. **PR 제목 결정**:
+5. **PR 제목 결정**:
    - 현재 작업 디렉토리 이름이 프로젝트(리포지토리) 이름이 비슷하면: `<branch-name>`을 가공하여 PR 제목으로 사용
      - `feature/`, `fix/` 등 prefix 제거 (예: `feature/add-login` → `add-login`)
      - `-`를 공백으로 치환 (예: `add-login` → `add login`)
    - 다르면: `<현재 작업 디렉토리 이름>`을 PR 제목으로 사용
 
-5. **PR 생성** (gh CLI 사용):
+6. **PR 생성** (gh CLI 사용):
    ```bash
    gh pr create \
      --repo <upstream-org>/<repo-name> \
@@ -54,12 +56,12 @@ disable-model-invocation: true
    )"
    ```
 
-6. **결과 출력**: 생성된 PR 제목과 URL 목록을 출력
+7. **결과 출력**: 생성된 PR 제목과 URL 목록을 출력 (건너뛴 프로젝트가 있으면 함께 안내)
 
 ## 주의사항
 
 - **upstream에 직접 push 금지**: origin에서 upstream으로 PR을 생성해야 함
-- upstream에 이미 동일 브랜치가 push되어 있어도 신규 변경사항만 담음 PR 생성
+- upstream에 이미 동일 브랜치가 push되어 있어도 신규 변경사항만 담아 PR 생성
 - 아직 열려있는 PR이 있다면 작업중지
 - origin의 remote URL에서 owner 이름 추출 필요 (예: `changgun-lee`)
 - upstream의 remote URL에서 org/repo 이름 추출 필요 (예: `team-commdev/rounz-cms-api`)
