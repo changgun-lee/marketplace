@@ -48,13 +48,14 @@ disable-model-invocation: true
      --head <origin-owner>:<branch-name> \
      --base <branch-name> \
      --title "<PR 제목>" \
-     --reviewer <reviewers> \
+     --reviewer <reviewers> \  # $ARGUMENTS가 있을 때만 추가
      --body "$(cat <<'EOF'
    ## Summary
    - <프로젝트별 변경사항 요약>
    EOF
    )"
    ```
+   - `$ARGUMENTS`가 비어있으면 `--reviewer` 옵션을 생략하고 리뷰어 없이 PR 생성
 
 7. **결과 출력**: 생성된 PR 제목과 URL 목록을 출력 (건너뛴 프로젝트가 있으면 함께 안내)
 
