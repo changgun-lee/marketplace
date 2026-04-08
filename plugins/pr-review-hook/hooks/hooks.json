@@ -1,0 +1,16 @@
+{
+    "description": "코드 수정 완료 후 pr-review-toolkit을 사용하여 자동 코드 리뷰를 실행하는 훅 (Stop에서 호출)",
+    "hooks": {
+        "Stop": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pr-review-check.sh"
+                    }
+                ]
+            }
+        ]
+    }
+}
