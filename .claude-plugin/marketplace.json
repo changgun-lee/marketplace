@@ -55,6 +55,11 @@
             "name": "remember",
             "source": "./plugins/remember",
             "description": "현재 디렉토리에 MEMORY.md 파일로 기억할 내용을 저장하는 스킬"
+        },
+        {
+            "name": "pr-review-hook",
+            "source": "./plugins/pr-review-hook",
+            "description": "코드 수정 완료 후 pr-review-toolkit을 사용하여 자동 코드 리뷰를 실행하는 훅"
         }
     ]
 }
