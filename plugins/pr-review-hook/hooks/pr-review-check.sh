@@ -42,10 +42,19 @@ fi
 
 # 변경된 파일 목록 생성
 ALL_CHANGED_FILES=$(echo -e "${MODIFIED_FILES}\n${STAGED_FILES}" | sort -u | grep -v '^$')
-FILE_COUNT=$(echo "$ALL_CHANGED_FILES" | wc -l | tr -d ' ')
+
+# 리뷰 대상 확장자 필터링 (.ts, .tsx, .py, .php, .java, .js, .jsx, .kt, .ps1, .sh)
+REVIEW_TARGET_FILES=$(echo "$ALL_CHANGED_FILES" | grep -E '\.(ts|tsx|py|php|java|js|jsx|kt|ps1|sh)$')
+
+# 리뷰 대상 파일이 없으면 스킵
+if [[ -z "$REVIEW_TARGET_FILES" ]]; then
+    exit 0
+fi
+
+FILE_COUNT=$(echo "$REVIEW_TARGET_FILES" | wc -l | tr -d ' ')
 
 report_block "코드 수정이 감지되었습니다 (${FILE_COUNT}개 파일 변경).
 /pr-review-toolkit:review-pr 스킬을 사용하여 코드 리뷰를 실행해주세요.
 
 변경된 파일:
-${ALL_CHANGED_FILES}"
+${REVIEW_TARGET_FILES}"

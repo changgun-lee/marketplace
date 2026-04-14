@@ -1,7 +1,7 @@
 {
     "name": "pr-review-hook",
     "description": "코드 수정 완료 후 pr-review-toolkit을 사용하여 자동 코드 리뷰를 실행하는 훅 (Stop에서 호출)",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": {
         "name": "Changgun Lee",
         "email": "gilchris@estsoft.com"
