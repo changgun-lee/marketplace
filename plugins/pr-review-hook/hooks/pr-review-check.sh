@@ -53,7 +53,25 @@ fi
 
 FILE_COUNT=$(echo "$REVIEW_TARGET_FILES" | wc -l | tr -d ' ')
 
-report_block "코드 수정이 감지되었습니다 (${FILE_COUNT}개 파일 변경).
+# 리뷰 대상 파일만 한정해서 변경 라인 수 계산 (unstaged + staged 합산)
+TOTAL_CHANGED_LINES=0
+MAX_FILE_CHANGED_LINES=0
+while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    NUMSTAT=$(git diff --numstat -- "$file" 2>/dev/null; git diff --cached --numstat -- "$file" 2>/dev/null)
+    FILE_LINES=$(echo "$NUMSTAT" | awk '{ if ($1 ~ /^[0-9]+$/) a+=$1; if ($2 ~ /^[0-9]+$/) d+=$2 } END { print a+d+0 }')
+    TOTAL_CHANGED_LINES=$((TOTAL_CHANGED_LINES + FILE_LINES))
+    if (( FILE_LINES > MAX_FILE_CHANGED_LINES )); then
+        MAX_FILE_CHANGED_LINES=$FILE_LINES
+    fi
+done <<< "$REVIEW_TARGET_FILES"
+
+# 리뷰 조건: 파일 2개 이상 변경되었거나, 단일 파일에서 30줄 이상 변경된 경우에만 리뷰 실행
+if (( FILE_COUNT < 2 )) && (( MAX_FILE_CHANGED_LINES < 30 )); then
+    exit 0
+fi
+
+report_block "코드 수정이 감지되었습니다 (${FILE_COUNT}개 파일, 총 ${TOTAL_CHANGED_LINES}줄 변경).
 /pr-review-toolkit:review-pr 스킬을 사용하여 코드 리뷰를 실행해주세요.
 
 변경된 파일:
