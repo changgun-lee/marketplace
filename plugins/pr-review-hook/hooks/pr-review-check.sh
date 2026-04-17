@@ -31,6 +31,52 @@ cd "$CLAUDE_PROJECT_DIR" 2>/dev/null || { echo "WARNING: Cannot cd to CLAUDE_PRO
 # git 저장소가 아니면 종료
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
+# 현재 세션에서 Edit/Write/MultiEdit로 수정된 파일 목록을 transcript에서 추출
+TRANSCRIPT_PATH=$(echo "$HOOK_DATA" | jq -r '.transcript_path // empty' 2>/dev/null)
+if [[ -z "$TRANSCRIPT_PATH" || ! -f "$TRANSCRIPT_PATH" ]]; then
+    exit 0
+fi
+
+JQ_OUT=$(mktemp)
+JQ_ERR=$(mktemp)
+jq -r '
+    (.message.content // []) |
+    if type == "array" then .[] else empty end |
+    select(.type? == "tool_use") |
+    select(.name == "Edit" or .name == "Write" or .name == "MultiEdit") |
+    .input.file_path // empty
+' "$TRANSCRIPT_PATH" >"$JQ_OUT" 2>"$JQ_ERR"
+JQ_EXIT=$?
+if (( JQ_EXIT != 0 )); then
+    echo "WARNING: pr-review-check.sh: jq failed (exit $JQ_EXIT) on $TRANSCRIPT_PATH: $(cat "$JQ_ERR")" >&2
+fi
+SESSION_EDITED_ABS=$(sort -u "$JQ_OUT" | grep -v '^$')
+rm -f "$JQ_OUT" "$JQ_ERR"
+
+if [[ -z "$SESSION_EDITED_ABS" ]]; then
+    exit 0
+fi
+
+# git 저장소 루트 기준 상대 경로로 변환 (symlink 경로도 대응)
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+GIT_ROOT_REAL=$(cd "$GIT_ROOT" 2>/dev/null && pwd -P)
+SESSION_REL_FILES=$(echo "$SESSION_EDITED_ABS" | while IFS= read -r p; do
+    [[ -z "$p" ]] && continue
+    if [[ "$p" = /* ]]; then
+        if [[ -n "$GIT_ROOT" && "$p" == "$GIT_ROOT"/* ]]; then
+            echo "${p#"$GIT_ROOT"/}"
+        elif [[ -n "$GIT_ROOT_REAL" && "$p" == "$GIT_ROOT_REAL"/* ]]; then
+            echo "${p#"$GIT_ROOT_REAL"/}"
+        fi
+    else
+        echo "$p"
+    fi
+done | sort -u | grep -v '^$')
+
+if [[ -z "$SESSION_REL_FILES" ]]; then
+    exit 0
+fi
+
 # git으로 수정된 파일이 있는지 확인
 MODIFIED_FILES=$(git diff --name-only 2>/dev/null)
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
@@ -40,8 +86,9 @@ if [[ -z "$MODIFIED_FILES" && -z "$STAGED_FILES" ]]; then
     exit 0
 fi
 
-# 변경된 파일 목록 생성
-ALL_CHANGED_FILES=$(echo -e "${MODIFIED_FILES}\n${STAGED_FILES}" | sort -u | grep -v '^$')
+# 변경된 파일 목록 생성 후 현재 세션에서 편집된 파일만 남김
+ALL_CHANGED_FILES=$(echo -e "${MODIFIED_FILES}\n${STAGED_FILES}" | sort -u | grep -v '^$' \
+    | grep -Fx -f <(echo "$SESSION_REL_FILES"))
 
 # 리뷰 대상 확장자 필터링 (.ts, .tsx, .py, .php, .java, .js, .jsx, .kt, .ps1, .sh)
 REVIEW_TARGET_FILES=$(echo "$ALL_CHANGED_FILES" | grep -E '\.(ts|tsx|py|php|java|js|jsx|kt|ps1|sh)$')
