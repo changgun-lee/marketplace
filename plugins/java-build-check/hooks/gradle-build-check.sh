@@ -58,6 +58,14 @@ if [[ -z "$MODIFIED_JAVA" && -z "$STAGED_JAVA" ]]; then
     exit 0
 fi
 
+# JAVA_HOME이 설정되어 있으면 gradle에 명시적으로 전달
+GRADLE_JAVA_OPTS=()
+if [[ -n "$JAVA_HOME" && -x "$JAVA_HOME/bin/java" ]]; then
+    JAVA_VERSION=$("$JAVA_HOME/bin/java" -version 2>&1 | head -n 1)
+    echo "☕ JAVA_HOME 감지: $JAVA_HOME ($JAVA_VERSION)" >&2
+    GRADLE_JAVA_OPTS+=("-Dorg.gradle.java.home=$JAVA_HOME")
+fi
+
 # 전체 빌드 결과 추적
 OVERALL_EXIT_CODE=0
 FAILED_PROJECTS=()
@@ -68,7 +76,7 @@ for PROJECT_DIR in "${PROJECT_DIRS[@]}"; do
     echo "🔨 Java/Kotlin 파일 변경 감지. gradlew build 실행 중... (${PROJECT_DIR})" >&2
 
     # 해당 디렉토리로 이동하여 빌드 실행
-    BUILD_OUTPUT=$(cd "$PROJECT_DIR" && ./gradlew build 2>&1)
+    BUILD_OUTPUT=$(cd "$PROJECT_DIR" && ./gradlew "${GRADLE_JAVA_OPTS[@]}" build 2>&1)
     BUILD_EXIT_CODE=$?
 
     if [[ $BUILD_EXIT_CODE -eq 0 ]]; then
