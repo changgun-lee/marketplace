@@ -60,6 +60,11 @@
             "name": "pr-review-hook",
             "source": "./plugins/pr-review-hook",
             "description": "코드 수정 완료 후 pr-review-toolkit을 사용하여 자동 코드 리뷰를 실행하는 훅"
+        },
+        {
+            "name": "block-critical-query",
+            "source": "./plugins/block-critical-query",
+            "description": "Bash 명령에 포함된 위험한 SQL 쿼리(DROP, DELETE, ALTER, TRUNCATE)의 실행을 차단하는 훅"
         }
     ]
 }

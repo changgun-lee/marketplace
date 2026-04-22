@@ -18,7 +18,8 @@ marketplace/
 │   ├── guidelines/           # 코딩 가이드라인
 │   ├── typescript-lint/      # TypeScript lint & format 훅
 │   ├── squash/               # Git squash (미push 커밋 합치기)
-│   └── remember/             # 현재 디렉토리에 기억 저장
+│   ├── remember/             # 현재 디렉토리에 기억 저장
+│   └── block-critical-query/ # 위험한 SQL 쿼리(DROP/DELETE/ALTER/TRUNCATE) 실행 차단
 └── CLAUDE.md
 ```
 
@@ -91,6 +92,17 @@ marketplace/
 - **스킬**: `/remember:remember`
 - **모드 1**: 대화 중 "기억해줘" 등의 표현으로 특정 내용 저장 → `{주제}-MEMORY.md`
 - **모드 2**: `/remember` 직접 호출 시 현재 세션 요약 저장 → `session-{날짜}-{주제}-MEMORY.md`
+
+### 11. block-critical-query
+- **설명**: Bash 명령에 포함된 위험한 SQL 쿼리(DROP, DELETE, ALTER, TRUNCATE) 실행을 사전에 차단
+- **타입**: Hook (PreToolUse)
+- **트리거**: Bash 도구 실행 전
+- **탐지 패턴**:
+  - `DROP (TABLE|DATABASE|SCHEMA|INDEX|VIEW|COLUMN|CONSTRAINT|TRIGGER|FUNCTION|PROCEDURE|SEQUENCE|USER|ROLE|TABLESPACE|TYPE|MATERIALIZED VIEW)`
+  - `DELETE FROM`
+  - `ALTER (TABLE|DATABASE|SCHEMA|INDEX|VIEW|COLUMN|CONSTRAINT|TRIGGER|FUNCTION|PROCEDURE|SEQUENCE|USER|ROLE|TABLESPACE|TYPE|MATERIALIZED VIEW)`
+  - `TRUNCATE <식별자>` (TRUNCATE TABLE / TRUNCATE ONLY / TRUNCATE tbl 모두 포함)
+- **동작**: 패턴이 감지되면 `decision: block`으로 실행 차단하고 Claude에게 사용자 확인을 요구하도록 안내
 
 ## 플러그인 개발 가이드
 

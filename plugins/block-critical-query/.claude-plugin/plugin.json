@@ -1,0 +1,22 @@
+{
+    "name": "block-critical-query",
+    "description": "Bash 명령에 포함된 위험한 SQL 쿼리(DROP, DELETE, ALTER, TRUNCATE)의 실행을 차단하는 훅 (PreToolUse에서 호출)",
+    "version": "1.0.0",
+    "author": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    },
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/block-critical-query.sh"
+                    }
+                ]
+            }
+        ]
+    }
+}
