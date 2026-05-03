@@ -1,0 +1,16 @@
+{
+    "description": "프로젝트 디렉토리 외부 파일을 수정/삭제하는 Bash 명령의 실행을 차단하는 훅 (PreToolUse에서 호출)",
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/block-outside-modification.sh"
+                    }
+                ]
+            }
+        ]
+    }
+}

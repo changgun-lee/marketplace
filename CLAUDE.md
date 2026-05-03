@@ -19,7 +19,8 @@ marketplace/
 │   ├── typescript-lint/      # TypeScript lint & format 훅
 │   ├── squash/               # Git squash (미push 커밋 합치기)
 │   ├── remember/             # 현재 디렉토리에 기억 저장
-│   └── block-critical-query/ # 위험한 SQL 쿼리(DROP/DELETE/ALTER/TRUNCATE) 실행 차단
+│   ├── block-critical-query/ # 위험한 SQL 쿼리(DROP/DELETE/ALTER/TRUNCATE) 실행 차단
+│   └── block-outside-modification/ # 프로젝트 외부 파일 수정 Bash 명령 차단
 └── CLAUDE.md
 ```
 
@@ -103,6 +104,14 @@ marketplace/
   - `ALTER (TABLE|DATABASE|SCHEMA|INDEX|VIEW|COLUMN|CONSTRAINT|TRIGGER|FUNCTION|PROCEDURE|SEQUENCE|USER|ROLE|TABLESPACE|TYPE|MATERIALIZED VIEW)`
   - `TRUNCATE <식별자>` (TRUNCATE TABLE / TRUNCATE ONLY / TRUNCATE tbl 모두 포함)
 - **동작**: 패턴이 감지되면 `decision: block`으로 실행 차단하고 Claude에게 사용자 확인을 요구하도록 안내
+
+### 12. block-outside-modification
+- **설명**: Bash 명령으로 프로젝트 디렉토리(`CLAUDE_PROJECT_DIR`) 외부 파일을 수정/삭제하려는 작업을 사전에 차단
+- **타입**: Hook (PreToolUse)
+- **트리거**: Bash 도구 실행 전
+- **탐지 키워드**: `rm`, `rmdir`, `mv`, `cp`, `tee`, `truncate`, `chmod`, `chown`, `chgrp`, `touch`, `mkdir`, `ln`, `install`, `patch`, `dd`, `unlink`, `sed -i` / `sed --in-place`, `>` / `>>` 리다이렉션
+- **동작**: 위 키워드와 함께 명령에 포함된 절대경로(`/...`) 또는 홈 경로(`~/...`)가 프로젝트 외부를 가리키면 `decision: block`으로 차단
+- **화이트리스트**: `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/stdin`, `/dev/fd/*`
 
 ## 플러그인 개발 가이드
 

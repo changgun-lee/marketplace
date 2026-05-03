@@ -65,6 +65,11 @@
             "name": "block-critical-query",
             "source": "./plugins/block-critical-query",
             "description": "Bash 명령에 포함된 위험한 SQL 쿼리(DROP, DELETE, ALTER, TRUNCATE)의 실행을 차단하는 훅"
+        },
+        {
+            "name": "block-outside-modification",
+            "source": "./plugins/block-outside-modification",
+            "description": "Bash 명령으로 프로젝트 디렉토리 외부 파일을 수정/삭제(rm, mv, cp, sed -i, > 등)하려는 작업을 차단하는 훅"
         }
     ]
 }
