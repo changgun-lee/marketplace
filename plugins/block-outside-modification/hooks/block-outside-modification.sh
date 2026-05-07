@@ -78,10 +78,27 @@ if ! printf '%s' "$COMMAND_FLAT" | grep -qiE "$MODIFY_KEYWORDS"; then
 fi
 
 # 토큰 단위로 절대 경로 추출
-# 따옴표/백틱 제거 후 공백 및 일반 쉘 구분자로 분리
-TOKENS=$(printf '%s' "$COMMAND_FLAT" \
-    | tr -d "\"'\`" \
-    | tr ' \t<>|&;()={}' '\n')
+# 1순위: Python shlex로 쉘 인용을 인식해 정확하게 토큰화 (공백 포함 경로 보존).
+# 2순위(폴백): python3 미존재 또는 파싱 실패 시 기존 방식(따옴표 제거 후 구분자 분리).
+# 출력은 토큰당 한 줄.
+TOKENS=""
+if command -v python3 >/dev/null 2>&1; then
+    TOKENS=$(printf '%s' "$COMMAND_FLAT" | python3 -c '
+import sys, shlex
+try:
+    for tok in shlex.split(sys.stdin.read(), posix=True, comments=False):
+        # 토큰 내부의 개행은 공백으로 치환해 줄단위 처리와 호환되도록 함
+        sys.stdout.write(tok.replace("\n", " ").replace("\r", " ") + "\n")
+except Exception:
+    sys.exit(1)
+' 2>/dev/null) || TOKENS=""
+fi
+
+if [[ -z "$TOKENS" ]]; then
+    TOKENS=$(printf '%s' "$COMMAND_FLAT" \
+        | tr -d "\"'\`" \
+        | tr ' \t<>|&;()={}' '\n')
+fi
 
 OUTSIDE_PATHS=()
 while IFS= read -r token; do
