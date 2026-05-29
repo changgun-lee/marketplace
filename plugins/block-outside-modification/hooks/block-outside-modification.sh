@@ -79,14 +79,17 @@ fi
 
 # 토큰 단위로 절대 경로 추출
 # 1순위: Python shlex로 쉘 인용을 인식해 정확하게 토큰화 (공백 포함 경로 보존).
-# 2순위(폴백): python3 미존재 또는 파싱 실패 시 기존 방식(따옴표 제거 후 구분자 분리).
+#        comments=True 로 쉘 주석(#...)을 토큰화 단계에서 제거하여,
+#        주석 안에 적힌 /abcd/ 같은 경로 형태가 오탐되지 않도록 함.
+#        주석은 줄 단위로 끝나므로 개행이 보존된 원본 COMMAND 를 입력으로 사용.
+# 2순위(폴백): python3 미존재 또는 파싱 실패 시 주석 제거 후 따옴표 제거 + 구분자 분리.
 # 출력은 토큰당 한 줄.
 TOKENS=""
 if command -v python3 >/dev/null 2>&1; then
-    TOKENS=$(printf '%s' "$COMMAND_FLAT" | python3 -c '
+    TOKENS=$(printf '%s' "$COMMAND" | python3 -c '
 import sys, shlex
 try:
-    for tok in shlex.split(sys.stdin.read(), posix=True, comments=False):
+    for tok in shlex.split(sys.stdin.read(), posix=True, comments=True):
         # 토큰 내부의 개행은 공백으로 치환해 줄단위 처리와 호환되도록 함
         sys.stdout.write(tok.replace("\n", " ").replace("\r", " ") + "\n")
 except Exception:
@@ -95,7 +98,10 @@ except Exception:
 fi
 
 if [[ -z "$TOKENS" ]]; then
-    TOKENS=$(printf '%s' "$COMMAND_FLAT" \
+    # 폴백: 줄 단위로 쉘 주석(공백 뒤 # 또는 줄 시작 #)을 제거한 뒤 토큰화.
+    TOKENS=$(printf '%s' "$COMMAND" \
+        | sed 's/[[:space:]]#.*$//; s/^#.*$//' \
+        | tr '\n' ' ' \
         | tr -d "\"'\`" \
         | tr ' \t<>|&;()={}' '\n')
 fi
