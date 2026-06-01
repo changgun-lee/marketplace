@@ -20,7 +20,8 @@ marketplace/
 │   ├── squash/               # Git squash (미push 커밋 합치기)
 │   ├── remember/             # 현재 디렉토리에 기억 저장
 │   ├── block-critical-query/ # 위험한 SQL 쿼리(DROP/DELETE/ALTER/TRUNCATE) 실행 차단
-│   └── block-outside-modification/ # 프로젝트 외부 파일 수정 Bash 명령 차단
+│   ├── block-outside-modification/ # 프로젝트 외부 파일 수정 Bash 명령 차단
+│   └── now-branches/         # 세션 시작 시 현재/하위 디렉토리 git 브랜치 안내
 └── CLAUDE.md
 ```
 
@@ -112,6 +113,13 @@ marketplace/
 - **탐지 키워드**: `rm`, `rmdir`, `mv`, `cp`, `tee`, `truncate`, `chmod`, `chown`, `chgrp`, `touch`, `mkdir`, `ln`, `install`, `patch`, `dd`, `unlink`, `sed -i` / `sed --in-place`, `>` / `>>` 리다이렉션
 - **동작**: 위 키워드와 함께 명령에 포함된 절대경로(`/...`) 또는 홈 경로(`~/...`)가 프로젝트 외부를 가리키면 `decision: block`으로 차단
 - **화이트리스트**: `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/stdin`, `/dev/fd/*`
+
+### 13. now-branches
+- **설명**: 세션 시작 시 현재 디렉토리와 바로 하위 디렉토리(한 단계)들의 현재 git 브랜치를 표 형태로 알려줌
+- **타입**: Hook (SessionStart)
+- **동작**: `CLAUDE_PROJECT_DIR`(없으면 현재 디렉토리) 기준으로 git 저장소를 찾아 브랜치명을 `additionalContext`로 전달
+- **특징**: detached HEAD는 짧은 커밋 해시로 표시, git 저장소가 하나도 없으면 컨텍스트를 추가하지 않음
+- **의존성**: `jq`, `git`
 
 ## 플러그인 개발 가이드
 

@@ -70,6 +70,11 @@
             "name": "block-outside-modification",
             "source": "./plugins/block-outside-modification",
             "description": "Bash 명령으로 프로젝트 디렉토리 외부 파일을 수정/삭제(rm, mv, cp, sed -i, > 등)하려는 작업을 차단하는 훅"
+        },
+        {
+            "name": "now-branches",
+            "source": "./plugins/now-branches",
+            "description": "세션 시작 시 현재 디렉토리와 바로 하위 디렉토리들의 현재 git 브랜치를 알려주는 훅"
         }
     ]
 }

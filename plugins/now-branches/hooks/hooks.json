@@ -1,0 +1,15 @@
+{
+    "description": "세션 시작 시 현재 디렉토리와 바로 하위 디렉토리들의 현재 git 브랜치를 알려주는 훅 (SessionStart에서 호출)",
+    "hooks": {
+        "SessionStart": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/now-branches.sh"
+                    }
+                ]
+            }
+        ]
+    }
+}
