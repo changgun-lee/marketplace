@@ -75,6 +75,11 @@
             "name": "now-branches",
             "source": "./plugins/now-branches",
             "description": "세션 시작 시 현재 디렉토리와 바로 하위 디렉토리들의 현재 git 브랜치를 알려주는 훅"
+        },
+        {
+            "name": "block-git-push",
+            "source": "./plugins/block-git-push",
+            "description": "git push 및 원격 저장소에 쓰기를 발생시키는 gh 명령(repo sync, pr create/merge, release, api 쓰기 등)의 실행을 차단하는 훅"
         }
     ]
 }

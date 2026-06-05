@@ -21,7 +21,8 @@ marketplace/
 │   ├── remember/             # 현재 디렉토리에 기억 저장
 │   ├── block-critical-query/ # 위험한 SQL 쿼리(DROP/DELETE/ALTER/TRUNCATE) 실행 차단
 │   ├── block-outside-modification/ # 프로젝트 외부 파일 수정 Bash 명령 차단
-│   └── now-branches/         # 세션 시작 시 현재/하위 디렉토리 git 브랜치 안내
+│   ├── now-branches/         # 세션 시작 시 현재/하위 디렉토리 git 브랜치 안내
+│   └── block-git-push/       # git push 및 원격에 쓰는 gh 명령 차단
 └── CLAUDE.md
 ```
 
@@ -120,6 +121,20 @@ marketplace/
 - **동작**: `CLAUDE_PROJECT_DIR`(없으면 현재 디렉토리) 기준으로 git 저장소를 찾아 브랜치명을 `additionalContext`로 전달
 - **특징**: detached HEAD는 짧은 커밋 해시로 표시, git 저장소가 하나도 없으면 컨텍스트를 추가하지 않음
 - **의존성**: `jq`, `git`
+
+### 14. block-git-push
+- **설명**: Bash 명령에 포함된 `git push`와 원격 저장소에 쓰기를 발생시키는 `gh` 명령의 실행을 사전에 차단
+- **타입**: Hook (PreToolUse)
+- **트리거**: Bash 도구 실행 전
+- **탐지 패턴**:
+  - `git push` (git과 push 사이의 전역 옵션 허용: `git -C dir push`, `git --git-dir=/x push`, `git -c key=val push` 등)
+  - `gh repo (sync|create|delete|edit)`
+  - `gh pr (create|merge)`
+  - `gh release (create|upload|edit|delete|delete-asset)`
+  - `gh api`에 `-X`/`--method`로 POST/PUT/PATCH/DELETE를 지정하거나 `-f`/`-F`/`--field`/`--raw-field`/`--input`으로 본문을 보내는 경우 (본문 지정 시 기본 메서드가 POST)
+- **허용**: 조회성 명령은 통과 (`git stash push`, `gh pr list/view/checkout`, `gh api GET`, `gh repo clone` 등)
+- **동작**: 패턴이 감지되면 `decision: block`으로 실행 차단하고 Claude에게 사용자 확인을 요구하도록 안내
+- **의존성**: `jq`
 
 ## 플러그인 개발 가이드
 
