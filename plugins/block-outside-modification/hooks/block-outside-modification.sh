@@ -22,6 +22,44 @@ report_block() {
     fi
 }
 
+# 경로를 어휘적(lexical)으로 정규화: 심볼릭 링크를 따라가지 않고
+# `.`, `..`, 중복 슬래시만 텍스트 수준에서 정리한다.
+#   - 프로젝트 내부에 외부를 가리키는 심볼릭 링크(예: docs/foo -> ~/other)가 있어도
+#     프로젝트 디렉토리 경로 아래로 보이면 내부로 간주(사용자의 디렉토리 구조 기준).
+#   - `/project/../../etc` 같은 .. 탈출은 정규화 과정에서 외부로 드러나 여전히 차단됨.
+normalize_path() {
+    local p="$1"
+    local result
+    # python normpath 성공 여부는 빈 출력이 아니라 종료 코드로 판정.
+    # (실패 시 stderr는 억제하지 않아 verbose 모드에서 폴백 사용을 확인 가능)
+    if command -v python3 >/dev/null 2>&1; then
+        if result=$(printf '%s' "$p" | python3 -c 'import sys, os; sys.stdout.write(os.path.normpath(sys.stdin.read()))'); then
+            printf '%s' "$result"
+            return
+        fi
+    fi
+    # 폴백: 순수 bash 어휘 정규화 (glob 비활성화로 안전하게 분해)
+    local oldIFS="$IFS" part
+    local -a parts=() out=()
+    IFS=/
+    set -f
+    parts=($p)
+    set +f
+    IFS="$oldIFS"
+    for part in "${parts[@]}"; do
+        case "$part" in
+            ''|.) continue ;;
+            ..) [[ ${#out[@]} -gt 0 ]] && unset 'out[${#out[@]}-1]' ;;
+            *) out+=("$part") ;;
+        esac
+    done
+    local joined=""
+    for part in "${out[@]}"; do
+        joined="$joined/$part"
+    done
+    printf '%s' "${joined:-/}"
+}
+
 # 화이트리스트: 프로젝트 외부지만 일반적으로 안전한 경로
 is_allowed_outside() {
     local path="$1"
@@ -57,11 +95,13 @@ fi
 if [[ -z "$PROJECT_DIR" ]]; then
     PROJECT_DIR="$(pwd)"
 fi
-PROJECT_DIR_ABS=$(cd "$PROJECT_DIR" 2>/dev/null && pwd -P)
+# 논리(logical) 경로 사용: 심볼릭 링크를 해석하지 않아야 토큰 경로와 동일한 기준으로 비교 가능
+PROJECT_DIR_ABS=$(cd "$PROJECT_DIR" 2>/dev/null && pwd -L)
 if [[ -z "$PROJECT_DIR_ABS" ]]; then
     # 프로젝트 디렉토리를 결정할 수 없으면 검사 불가 → 통과
     exit 0
 fi
+PROJECT_DIR_ABS=$(normalize_path "$PROJECT_DIR_ABS")
 
 # 개행을 공백으로 치환하여 한 덩어리로 검사
 COMMAND_FLAT=$(printf '%s' "$COMMAND" | tr '\n' ' ')
@@ -128,14 +168,8 @@ while IFS= read -r token; do
         continue
     fi
 
-    # 부모 디렉토리만 정규화 (대상 파일이 아직 없을 수 있음)
-    parent=$(dirname "$expanded")
-    base=$(basename "$expanded")
-    if abs_parent=$(cd "$parent" 2>/dev/null && pwd -P); then
-        abs_path="$abs_parent/$base"
-    else
-        abs_path="$expanded"
-    fi
+    # 어휘적으로 정규화 (심볼릭 링크를 따라가지 않음, 대상이 아직 없어도 동작)
+    abs_path=$(normalize_path "$expanded")
 
     # 프로젝트 내부면 통과
     case "$abs_path" in
