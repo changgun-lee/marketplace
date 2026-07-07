@@ -79,6 +79,9 @@ public class EclipseFormatter {
                 // 후처리: stream(), builder() 등은 이전 줄에 붙임 (builder는 뒤 체이닝 유지)
                 formatted = fixMethodChainingStart(formatted);
 
+                // 후처리: 한 줄짜리 /** ... */ 주석을 //로 변경
+                formatted = convertSingleLineBlockCommentToLineComment(formatted);
+
                 if (!content.equals(formatted)) {
                     Files.writeString(file.toPath(), formatted);
                     System.out.println("Formatted: " + filePath);
@@ -148,6 +151,105 @@ public class EclipseFormatter {
         result = newInstancePattern.matcher(result).replaceAll("$1\n" + chainIndent + "$2");
 
         return result;
+    }
+
+    // 한 줄을 통째로 차지하는 /** ... */ 주석을 라인 주석(//)으로 변경한다.
+    //   "    /** 설명 */" -> "    // 설명"
+    //   "    /** */"      -> "    //"
+    // 주석 앞이나 뒤에 코드가 있거나 여러 줄에 걸친 주석은 건드리지 않는다.
+    // 문자열 리터럴이나 텍스트 블록("""...""") 안의 /** */를 잘못 변환하지 않도록
+    // 정규식이 아니라 AST의 주석 목록에서 실제 주석 노드만 찾아 변환한다.
+    private static String convertSingleLineBlockCommentToLineComment(String source) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(source.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+
+        Map<String, String> compilerOptions = new HashMap<>();
+        compilerOptions.put("org.eclipse.jdt.core.compiler.source", "17");
+        compilerOptions.put("org.eclipse.jdt.core.compiler.compliance", "17");
+        compilerOptions.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17");
+        parser.setCompilerOptions(compilerOptions);
+
+        CompilationUnit cu;
+        try {
+            cu = (CompilationUnit) parser.createAST(null);
+        } catch (Exception e) {
+            return source;
+        }
+
+        List<?> comments = cu.getCommentList();
+        if (comments == null || comments.isEmpty()) {
+            return source;
+        }
+
+        // 변환 대상 주석의 영역 수집 {start, end}
+        List<int[]> targets = new ArrayList<>();
+        for (Object obj : comments) {
+            Comment comment = (Comment) obj;
+            int start = comment.getStartPosition();
+            if (start < 0) {
+                continue;
+            }
+            int end = start + comment.getLength();
+            String text = source.substring(start, end);
+
+            // /** 로 시작하는 주석만 (일반 /* 블록 주석, // 라인 주석 제외)
+            if (!text.startsWith("/**")) {
+                continue;
+            }
+            // 여러 줄 주석은 제외
+            if (text.indexOf('\n') != -1) {
+                continue;
+            }
+            // 줄 전체가 주석인 경우만: 주석 앞쪽에 코드가 있으면 제외
+            int lineStart = source.lastIndexOf('\n', start - 1) + 1;
+            if (!source.substring(lineStart, start).trim().isEmpty()) {
+                continue;
+            }
+            // 주석 뒤쪽에 코드가 있으면 제외
+            int lineEnd = source.indexOf('\n', end);
+            if (lineEnd == -1) {
+                lineEnd = source.length();
+            }
+            if (!source.substring(end, lineEnd).trim().isEmpty()) {
+                continue;
+            }
+            targets.add(new int[]{start, end});
+        }
+
+        if (targets.isEmpty()) {
+            return source;
+        }
+
+        // 뒤에서부터 치환해야 앞쪽 오프셋이 어긋나지 않음
+        targets.sort((a, b) -> b[0] - a[0]);
+
+        StringBuilder sb = new StringBuilder(source);
+        for (int[] target : targets) {
+            int start = target[0];
+            int end = target[1];
+            String inner = extractCommentBody(source.substring(start, end));
+            // 들여쓰기(주석 앞 공백)와 줄바꿈은 그대로 두고 주석 본문만 치환
+            sb.replace(start, end, inner.isEmpty() ? "//" : "// " + inner);
+        }
+
+        return sb.toString();
+    }
+
+    // /** ... */ 주석에서 앞뒤의 슬래시/별표를 벗겨내고 안쪽 본문만 다듬어 돌려준다.
+    // 예: "/** 설명 */" -> "설명", "/*** 설명 **/" -> "설명", "/** */" -> ""
+    private static String extractCommentBody(String comment) {
+        int begin = 0;
+        while (begin < comment.length()
+            && (comment.charAt(begin) == '/' || comment.charAt(begin) == '*')) {
+            begin++;
+        }
+        int finish = comment.length();
+        while (finish > begin
+            && (comment.charAt(finish - 1) == '/' || comment.charAt(finish - 1) == '*')) {
+            finish--;
+        }
+        return comment.substring(begin, finish).trim();
     }
 
     /**
