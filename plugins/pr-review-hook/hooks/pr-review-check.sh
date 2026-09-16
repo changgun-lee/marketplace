@@ -118,6 +118,42 @@ if (( FILE_COUNT < 2 )) && (( MAX_FILE_CHANGED_LINES < 30 )); then
     exit 0
 fi
 
+# Stop hook은 매 턴 끝에 실행되므로, 커밋하지 않은 변경이 남아 있으면 같은 내용에
+# 대해 리뷰를 반복 요청하게 된다. 리뷰를 요청한 시점의 diff 지문을 세션별로
+# 기록해 두고, 지문이 그대로면 건너뛴다.
+SESSION_ID=$(echo "$HOOK_DATA" | jq -r '.session_id // empty' 2>/dev/null | tr -d '\n' | tr -c 'A-Za-z0-9._-' '_')
+[[ -z "$SESSION_ID" ]] && SESSION_ID="no-session"
+
+# 리뷰 대상 파일들의 unstaged + staged diff 내용을 해시 (git만으로 계산)
+FILE_ARGS=()
+while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    FILE_ARGS+=("$file")
+done <<< "$REVIEW_TARGET_FILES"
+
+FINGERPRINT=$( { git diff -- "${FILE_ARGS[@]}"; git diff --cached -- "${FILE_ARGS[@]}"; } 2>/dev/null \
+    | git hash-object --stdin 2>/dev/null)
+
+# worktree에서는 worktree 전용 git 디렉토리가 잡히므로 작업 공간별로 상태가 분리된다
+GIT_DIR=$(git rev-parse --absolute-git-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)
+
+# 지문이나 git 디렉토리를 구하지 못하면 리뷰 누락보다 중복이 낫기 때문에 그대로 진행
+if [[ -n "$FINGERPRINT" && -n "$GIT_DIR" ]]; then
+    STATE_DIR="$GIT_DIR/pr-review-hook"
+    STATE_FILE="$STATE_DIR/$SESSION_ID"
+
+    # 같은 지문으로 이미 리뷰를 요청했으면 건너뜀
+    if [[ -f "$STATE_FILE" && "$(cat "$STATE_FILE" 2>/dev/null)" == "$FINGERPRINT" ]]; then
+        exit 0
+    fi
+
+    if mkdir -p "$STATE_DIR" 2>/dev/null; then
+        # 종료된 세션의 상태 파일이 쌓이지 않도록 정리
+        find "$STATE_DIR" -type f -mtime +7 -delete 2>/dev/null
+        { echo "$FINGERPRINT" >"$STATE_FILE"; } 2>/dev/null
+    fi
+fi
+
 report_block "코드 수정이 감지되었습니다 (${FILE_COUNT}개 파일, 총 ${TOTAL_CHANGED_LINES}줄 변경).
 /pr-review-toolkit:review-pr 스킬을 사용하여 코드 리뷰를 실행해주세요.
 

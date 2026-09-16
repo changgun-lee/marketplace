@@ -22,7 +22,8 @@ marketplace/
 │   ├── block-critical-query/ # 위험한 SQL 쿼리(DROP/DELETE/ALTER/TRUNCATE) 실행 차단
 │   ├── block-outside-modification/ # 프로젝트 외부 파일 수정 Bash 명령 차단
 │   ├── now-branches/         # 세션 시작 시 현재/하위 디렉토리 git 브랜치 안내
-│   └── block-git-push/       # git push 및 원격에 쓰는 gh 명령 차단
+│   ├── block-git-push/       # git push 및 원격에 쓰는 gh 명령 차단
+│   └── pr-review-hook/       # 코드 수정 완료 후 자동 코드 리뷰 요청
 └── CLAUDE.md
 ```
 
@@ -135,6 +136,15 @@ marketplace/
 - **허용**: 조회성 명령은 통과 (`git stash push`, `gh pr list/view/checkout`, `gh api GET`, `gh repo clone` 등)
 - **동작**: 패턴이 감지되면 `decision: block`으로 실행 차단하고 Claude에게 사용자 확인을 요구하도록 안내
 - **의존성**: `jq`
+
+### 15. pr-review-hook
+- **설명**: 코드 수정이 일정 규모 이상이면 `pr-review-toolkit:review-pr` 스킬로 자동 코드 리뷰를 요청
+- **타입**: Hook (Stop)
+- **동작**: 현재 세션에서 Edit/Write/MultiEdit로 수정한 파일 중 git 변경분이 있는 파일을 골라 리뷰 요청
+- **리뷰 대상 확장자**: `.ts`, `.tsx`, `.py`, `.php`, `.java`, `.js`, `.jsx`, `.kt`, `.ps1`, `.sh`
+- **임계치**: 리뷰 대상 파일이 2개 이상이거나, 단일 파일에서 30줄 이상 변경된 경우에만 실행
+- **중복 리뷰 방지**: 리뷰를 요청한 시점의 diff 지문(`git hash-object`)을 `<git-dir>/pr-review-hook/<session_id>`에 기록하고, 지문이 같으면 건너뜀. 커밋하지 않아도 같은 변경에 대해 리뷰가 반복되지 않으며, 코드를 더 수정하면 지문이 바뀌어 다시 리뷰함 (상태 파일은 7일 후 자동 정리)
+- **의존성**: `jq`, `git`, pr-review-toolkit 플러그인
 
 ## 플러그인 개발 가이드
 

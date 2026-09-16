@@ -106,13 +106,29 @@ PROJECT_DIR_ABS=$(normalize_path "$PROJECT_DIR_ABS")
 # 개행을 공백으로 치환하여 한 덩어리로 검사
 COMMAND_FLAT=$(printf '%s' "$COMMAND" | tr '\n' ' ')
 
+# 파일 디스크립터 복제(2>&1, >&2, 1>&2, 2>&- 등)는 파일을 만들거나 덮어쓰지 않는다.
+# 아래 MODIFY_KEYWORDS 의 `>` 대안에 이것들이 걸리면 `cmd 2>&1` 처럼 무해한 명령이
+# 수정성 명령으로 오판되므로, 키워드 판정용 문자열에서만 미리 제거한다.
+# `&>file` 이나 `>&file` 처럼 실제로 파일에 쓰는 형태는 `>&` 뒤에 숫자/`-` 가 오지
+# 않으므로 그대로 남아 계속 검출된다.
+COMMAND_FOR_KEYWORDS=$(printf '%s' "$COMMAND_FLAT" | sed -E 's/[0-9]*>&[0-9-]+//g')
+
+# 안전한 장치 파일로의 리다이렉션(2>/dev/null 등)도 파일을 수정하지 않는다. 이것이 남으면
+# `grep ... /outside/path 2>/dev/null` 처럼 읽기만 하는 명령이 차단된다 — `>` 때문에
+# 수정성으로 판정된 뒤, 리다이렉션 대상이 아닌 읽기 인자 경로까지 외부 경로로 걸리기 때문이다.
+#
+# 뒤따르는 공백/줄끝을 그룹으로 잡아 되돌려 `/dev/nullx` 처럼 장치명이 아닌 경로는 남긴다.
+# BSD sed(macOS)는 `\b` 를 지원하지 않으므로 단어 경계 대신 이 방식을 쓴다.
+COMMAND_FOR_KEYWORDS=$(printf '%s' "$COMMAND_FOR_KEYWORDS" \
+    | sed -E 's#[0-9]*>>?[[:space:]]*/dev/(null|stdout|stderr|tty|zero|random|urandom|stdin)([[:space:]]|$)#\2#g')
+
 # 파일을 수정/삭제할 가능성이 있는 명령 키워드 + 리다이렉션(>, >>)
 # - 일반 수정 명령: rm, rmdir, mv, cp, tee, truncate, chmod, chown, chgrp, touch, mkdir, ln, install, patch, dd, unlink
 # - 인플레이스 편집: sed -i / sed --in-place
 # - 출력 리다이렉션: >, >>
 MODIFY_KEYWORDS='\b(rm|rmdir|mv|cp|tee|truncate|chmod|chown|chgrp|touch|mkdir|ln|install|patch|dd|unlink)\b|\bsed[[:space:]]+(-[a-zA-Z]*i\b|--in-place)|>'
 
-if ! printf '%s' "$COMMAND_FLAT" | grep -qiE "$MODIFY_KEYWORDS"; then
+if ! printf '%s' "$COMMAND_FOR_KEYWORDS" | grep -qiE "$MODIFY_KEYWORDS"; then
     # 수정성 명령이 전혀 없으면 통과
     exit 0
 fi
