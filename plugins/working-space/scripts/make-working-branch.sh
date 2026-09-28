@@ -7,8 +7,6 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-MY_GIT_USER="changgun-lee"
-
 # 브랜치 이름 처리 (공백을 -로 변경, 한글 유지)
 RAW_BRANCH_NAME="$@"
 BRANCH_NAME="feature/${RAW_BRANCH_NAME// /-}"
@@ -35,18 +33,20 @@ find . -type d -name ".git" | while read git_dir; do
     echo "Stashing local changes (if any)..."
     git stash push -u -m "auto-stash before branch setup" >/dev/null 2>&1
 
-    # 1. Remote origin 설정
-    echo "Setting remote..."
-    git remote set-url origin "https://github.com/${MY_GIT_USER}/${project_name}.git" 2>/dev/null || \
-        git remote add origin "https://github.com/${MY_GIT_USER}/${project_name}.git"
+    # 1. 기존 origin 확인
+    echo "Checking origin..."
+    if ! origin_url=$(git config --get remote.origin.url); then
+        echo "ERROR: origin remote is not configured in $project_name"
+        exit 1
+    fi
 
-    echo "  origin: https://github.com/${MY_GIT_USER}/${project_name}.git"
+    echo "  origin: $origin_url"
 
     # Remote repository 접근 가능 여부 확인
     echo "Verifying origin repository..."
     
     if ! git ls-remote --exit-code origin >/dev/null 2>&1; then
-        echo "ERROR: Cannot access origin repository: https://github.com/changgun-lee/${project_name}.git"
+        echo "ERROR: Cannot access origin repository: $origin_url"
         echo "Please check repository existence and your access permissions."
         exit 1
     fi
