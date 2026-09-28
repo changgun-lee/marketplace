@@ -35,19 +35,15 @@ find . -type d -name ".git" | while read git_dir; do
     echo "Stashing local changes (if any)..."
     git stash push -u -m "auto-stash before branch setup" >/dev/null 2>&1
 
-    # 1. Remote origin과 upstream 설정
-    echo "Setting remotes..."
+    # 1. Remote origin 설정
+    echo "Setting remote..."
     git remote set-url origin "https://github.com/${MY_GIT_USER}/${project_name}.git" 2>/dev/null || \
         git remote add origin "https://github.com/${MY_GIT_USER}/${project_name}.git"
 
-    git remote set-url upstream "https://github.com/team-commdev/${project_name}.git" 2>/dev/null || \
-        git remote add upstream "https://github.com/team-commdev/${project_name}.git"
-
     echo "  origin: https://github.com/${MY_GIT_USER}/${project_name}.git"
-    echo "  upstream: https://github.com/team-commdev/${project_name}.git"
 
     # Remote repository 접근 가능 여부 확인
-    echo "Verifying remote repositories..."
+    echo "Verifying origin repository..."
     
     if ! git ls-remote --exit-code origin >/dev/null 2>&1; then
         echo "ERROR: Cannot access origin repository: https://github.com/changgun-lee/${project_name}.git"
@@ -55,41 +51,32 @@ find . -type d -name ".git" | while read git_dir; do
         exit 1
     fi
     
-    if ! git ls-remote --exit-code upstream >/dev/null 2>&1; then
-        echo "ERROR: Cannot access upstream repository: https://github.com/team-commdev/${project_name}.git"
-        echo "Please check repository existence and your access permissions."
-        exit 1
-    fi
-    
-    echo "  Remote repositories verified successfully"
+    echo "  Origin repository verified successfully"
 
     # Remote 정보 fetch
     echo "Fetching remote branches..."
-    git fetch upstream --quiet
     git fetch origin --quiet
 
     # 2. production 브랜치를 기반으로 새 브랜치 생성 또는 체크아웃
     echo "Setting up branch: $BRANCH_NAME"
 
-    # upstream/production이 존재하는지 확인
-    if git show-ref --verify --quiet refs/remotes/upstream/production; then
+    # origin/production이 존재하는지 확인
+    if git show-ref --verify --quiet refs/remotes/origin/production; then
         # 로컬에 이미 브랜치가 있는지 확인
         if git show-ref --verify --quiet refs/heads/"$BRANCH_NAME"; then
             echo "  Local branch exists, checking out..."
             git checkout "$BRANCH_NAME" --quiet
             echo "  Checked out existing branch: $BRANCH_NAME"
             
-            echo "  Note: Branch already exists. If you want to sync with upstream/production,"
+            echo "  Note: Branch already exists. If you want to sync with origin/production,"
             echo "        you may need to merge or rebase manually."
         else
-            git checkout -b "$BRANCH_NAME" upstream/production --quiet
-            echo "  Branch created from upstream/production"
+            git checkout -b "$BRANCH_NAME" origin/production --quiet
+            echo "  Branch created from origin/production"
         fi
         
-        # 3. upstream과 origin에 푸시
-        echo "Pushing to remotes..."
-        git push upstream "$BRANCH_NAME" --quiet
-        echo "  Pushed to upstream"
+        # 3. origin에 푸시
+        echo "Pushing to origin..."
         git push origin "$BRANCH_NAME" --quiet
         echo "  Pushed to origin"
         
@@ -98,7 +85,7 @@ find . -type d -name ".git" | while read git_dir; do
         echo "  Tracking origin/$BRANCH_NAME"
         
     else
-        echo "  WARNING: upstream/production branch not found in $project_name"
+        echo "  WARNING: origin/production branch not found in $project_name"
         echo "  Skipping this project..."
     fi
 
@@ -109,7 +96,7 @@ find . -type d -name ".git" | while read git_dir; do
     fi
     
     cd - > /dev/null
-done
+done || exit 1
 
 echo ""
 echo "================================================"

@@ -47,7 +47,7 @@ cd "$GITHUB_ROOT"/리파지토리명
 "$CLAUDE_PLUGIN_ROOT"/scripts/make-working-branch.sh "작업제목"
 ```
 
-이 스크립트는 `feature/작업제목` 형식의 브랜치를 `upstream/production` 기반으로 생성합니다.
+이 스크립트는 `feature/작업제목` 형식의 브랜치를 `origin/production` 기반으로 생성합니다.
 
 ### 4단계: Git Worktree 생성
 각 리파지토리에 대해:
