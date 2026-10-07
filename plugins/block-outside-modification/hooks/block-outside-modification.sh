@@ -1,7 +1,9 @@
 #!/bin/bash
 # Bash 명령에서 프로젝트 외부 파일을 수정/삭제하는 작업을 차단하는 PreToolUse hook
 #
-# 동작 개요:
+# Python 분석기를 우선 사용한다 (허용 worktree, cwd, 명령별 수정 대상 검사).
+# 아래 기존 Bash 구현은 Python 미설치 또는 미지원 구문의 폴백이다.
+# 폴백 동작 개요:
 #   1. Bash 명령에 파일을 수정/삭제할 가능성이 있는 키워드(rm, mv, cp, sed -i, >, tee 등)가 포함되어 있는지 확인.
 #   2. 명령에 포함된 절대 경로(/...) 또는 홈 경로(~/...)들을 추출.
 #   3. 각 경로가 프로젝트 디렉토리(CLAUDE_PROJECT_DIR) 외부를 가리키면 차단.
@@ -74,6 +76,18 @@ is_allowed_outside() {
 
 # stdin에서 hook 데이터 읽기
 HOOK_DATA=$(cat)
+
+# Python 분석기는 허용 루트와 cwd를 분리하고 명령별 수정 대상만 검사한다.
+# Python 미설치/미지원 구문/분석 실패 시에는 아래의 기존 휴리스틱을 유지한다.
+if command -v python3 >/dev/null 2>&1; then
+    HOOK_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    ANALYSIS=$(printf '%s' "$HOOK_DATA" | python3 "$HOOK_DIR/analyze-command.py")
+    ANALYSIS_STATUS=$?
+    if [[ $ANALYSIS_STATUS -eq 0 ]]; then
+        [[ -n "$ANALYSIS" ]] && printf '%s\n' "$ANALYSIS"
+        exit 0
+    fi
+fi
 
 # Bash 도구가 아닌 경우 통과 (matcher로 이미 필터링되지만 방어적으로 확인)
 TOOL_NAME=$(echo "$HOOK_DATA" | jq -r '.tool_name // empty' 2>/dev/null)
