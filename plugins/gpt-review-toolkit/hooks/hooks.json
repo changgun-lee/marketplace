@@ -1,0 +1,28 @@
+{
+    "hooks": {
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python3 \"${PLUGIN_ROOT}/hooks/review_hook.py\"",
+                        "timeout": 30,
+                        "statusMessage": "리뷰를 위한 작업 시작 상태 기록"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python3 \"${PLUGIN_ROOT}/hooks/review_hook.py\"",
+                        "timeout": 30,
+                        "statusMessage": "변경 파일 자동 리뷰 확인"
+                    }
+                ]
+            }
+        ]
+    }
+}
