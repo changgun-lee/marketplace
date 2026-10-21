@@ -14,7 +14,7 @@ HOOK = Path(__file__).resolve().parents[1] / 'hooks/block-outside-modification.s
 class HookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix='outside-hook-')
+        cls.temp = tempfile.TemporaryDirectory(prefix='outside-hook-', dir=str(HOOK.parents[1]))
         cls.base = Path(cls.temp.name).resolve()
         cls.project = cls.base / 'project space'
         cls.project.mkdir()
@@ -166,6 +166,16 @@ class HookTests(unittest.TestCase):
         self.check('( touch {} )'.format(shlex.quote(str(self.outside / 'new.txt'))), True)
         self.check('patch ' + shlex.quote(str(self.outside / 'new.txt')), True)
 
+    def test_html_heredoc_with_unbalanced_quotes(self):
+        for content in ("it's ready", 'class="unfinished'):
+            with self.subTest(content=content):
+                self.check("cat > index.html <<'EOF'\n<div>{}</div>\n</body>\n</html>\nEOF".format(content))
+
+    def test_html_heredoc_keeps_external_output_blocked(self):
+        target = shlex.quote(str(self.outside / 'index.html'))
+        self.check("cat > {} <<'EOF'\n<div>it's ready</div>\n</html>\nEOF".format(target), True)
+        self.check("cat > index.html <<'EOF'\n<div>it's ready</div>\nEOF\ntouch {}".format(target), True)
+
     def test_new_output_uses_pretooluse_contract(self):
         result = self.check('touch ../outside/new.txt', True)
         self.assertEqual(result['hookSpecificOutput']['hookEventName'], 'PreToolUse')
@@ -198,13 +208,21 @@ class HookTests(unittest.TestCase):
             shlex.quote(str(self.outside / 'new.txt'))), True)
 
     def test_python_unavailable_keeps_legacy_fallback(self):
-        with tempfile.TemporaryDirectory(prefix='hook-tools-') as temp:
+        with tempfile.TemporaryDirectory(prefix='hook-tools-', dir=str(self.base)) as temp:
             for name in ('bash', 'cat', 'jq', 'sed', 'tr', 'grep', 'awk'):
                 Path(temp, name).symlink_to(shutil.which(name))
             self.check('touch ' + shlex.quote(str(self.outside / 'new.txt')), True,
                        extra_env={'PATH': temp})
             self.check('touch ' + shlex.quote(str(self.alias / 'new.txt')),
                        root=self.alias, extra_env={'PATH': temp})
+            for tag in ('div', 'HTML', 'h1', 'my-element', 'svg:path'):
+                with self.subTest(tag=tag):
+                    self.check("printf '%s' '<{0}>hello</{0} >' > index.html".format(tag),
+                               extra_env={'PATH': temp})
+            self.check("printf '%s' '<div>hello</div>' > " +
+                       shlex.quote(str(self.outside / 'index.html')), True,
+                       extra_env={'PATH': temp})
+            self.check('touch /div /html', True, extra_env={'PATH': temp})
 
 
 if __name__ == '__main__':
