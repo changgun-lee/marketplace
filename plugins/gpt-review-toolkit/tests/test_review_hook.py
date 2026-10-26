@@ -74,6 +74,66 @@ class ReviewHookTests(unittest.TestCase):
         self.begin()
         self.assertNotIn("decision", self.stop())
 
+    def test_non_source_only_changes_do_not_trigger(self):
+        files = ("README.md", "settings.json", "ci.yml", "build.gradle", "build.gradle.kts",
+                 "settings.gradle.kts", "buildSrc/conventions.gradle.kts", "Makefile",
+                 "Dockerfile", "assets/logo.svg", "tests/fixture.json", "src/notes.txt")
+        for name in files:
+            self.write(name, "before\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "non-source fixtures")
+        for operation in ("modified", "deleted", "added"):
+            with self.subTest(operation=operation):
+                self.begin(turn=operation)
+                for name in files:
+                    if operation == "deleted":
+                        (self.root / name).unlink()
+                    else:
+                        self.write(name, operation + "\n")
+                self.assertEqual(self.stop(turn=operation), {})
+                self.assertEqual(list((self.root / ".gpt-review-toolkit").glob("*/review.json")), [])
+
+    def test_existing_dirty_code_does_not_enable_document_only_review(self):
+        self.write("app.py", "preexisting = True\n")
+        self.begin()
+        self.write("README.md", "new documentation\n")
+        self.assertEqual(self.stop(), {})
+
+    def test_code_and_document_changes_are_reviewed_together(self):
+        self.begin()
+        self.write("app.py", "value = 2\n")
+        self.write("README.md", "new documentation\n")
+        request = self.review(self.stop())
+        self.assertEqual([item["path"] for item in request["files"]], ["README.md", "app.py"])
+
+    def test_source_test_and_script_additions_trigger(self):
+        for name in ("src/Main.java", "src/App.tsx", "tests/test_app.py", "scripts/check.sh", "scripts/check.kts"):
+            with self.subTest(name=name):
+                self.begin(turn=name)
+                self.write(name, "// new source\n")
+                request = self.review(self.stop(turn=name))
+                self.assertEqual([item["path"] for item in request["files"]], [name])
+
+    def test_extensionless_script_changes_use_before_and_after_shebang(self):
+        name = "bin/check"
+        for operation in ("added", "modified", "removed-shebang", "restored-shebang", "deleted"):
+            with self.subTest(operation=operation):
+                self.begin(turn=operation)
+                if operation == "deleted":
+                    (self.root / name).unlink()
+                elif operation == "removed-shebang":
+                    self.write(name, "echo changed\n")
+                else:
+                    self.write(name, "#!/bin/sh\necho " + operation + "\n")
+                request = self.review(self.stop(turn=operation))
+                self.assertEqual([item["path"] for item in request["files"]], [name])
+
+    def test_executable_non_script_does_not_trigger(self):
+        self.begin()
+        self.write("binary", "not a script\n")
+        (self.root / "binary").chmod(0o755)
+        self.assertEqual(self.stop(), {})
+
     def test_new_deleted_and_renamed_files_are_included(self):
         self.begin()
         (self.root / "app.py").rename(self.root / "renamed.py")
@@ -146,12 +206,12 @@ class ReviewHookTests(unittest.TestCase):
 
     def test_symlinks_are_not_followed(self):
         outside = PLUGIN / "tests" / "symlink-target-does-not-exist"
-        (self.root / "link").symlink_to(outside)
+        (self.root / "link.py").symlink_to(outside)
         self.begin()
-        (self.root / "link").unlink()
-        (self.root / "link").symlink_to("another-target")
+        (self.root / "link.py").unlink()
+        (self.root / "link.py").symlink_to("another-target")
         request = self.review(self.stop())
-        self.assertEqual(request["files"][0]["path"], "link")
+        self.assertEqual(request["files"][0]["path"], "link.py")
 
     def test_ignored_files_and_hook_state_are_not_reviewed(self):
         self.write(".gitignore", "build/\n")
@@ -221,8 +281,11 @@ class ReviewHookTests(unittest.TestCase):
         self.begin()
         (self.root / "binary").write_bytes(b"after\x00binary")
         self.write("large", "y" * (1024 * 1024 + 1))
+        self.write("app.py", "value = 2\n")
         request = self.review(self.stop())
         for item in request["files"]:
+            if item["path"] == "app.py":
+                continue
             self.assertIn("before_unavailable", item["before"])
             self.assertNotIn("text", item["before"])
 
@@ -250,8 +313,7 @@ class ReviewHookTests(unittest.TestCase):
         self.write("existing.py", "unchanged = True\n")
         self.begin()
         self.write(".gitignore", "existing.py\n")
-        request = self.review(self.stop())
-        self.assertEqual([item["path"] for item in request["files"]], [".gitignore"])
+        self.assertEqual(self.stop(), {})
 
     def test_removing_ignored_file_from_index_is_not_a_content_change(self):
         self.write(".gitignore", "app.py\n")
@@ -292,6 +354,162 @@ class ReviewHookTests(unittest.TestCase):
             output = json.loads(result.stdout)
             if event == "Stop":
                 self.assertEqual(output.get("decision"), "block", output)
+
+
+class WorkspaceReviewHookTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="workspace-", dir=str(PLUGIN / "tests"))
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        # Keep the fixture inside the project without discovering its enclosing Git repo.
+        self.env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(self.root.parent))
+
+    def repository(self, name):
+        root = self.root / name
+        root.mkdir(parents=True)
+        for args in (("init", "-q"), ("config", "user.name", "Hook Test"),
+                     ("config", "user.email", "hook-test@example.invalid")):
+            subprocess.check_call(["git", "-C", str(root)] + list(args), env=self.env)
+        (root / "app.py").write_text("value = 1\n", encoding="utf-8")
+        return root
+
+    def hook(self, event, **extra):
+        payload = dict(hook_event_name=event, cwd=str(self.root), session_id="s", turn_id="t")
+        payload.update(extra)
+        result = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload), env=self.env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        return json.loads(result.stdout)
+
+    def request(self, root, output):
+        requests = list((root / ".gpt-review-toolkit").glob("*/review.json"))
+        self.assertEqual(len(requests), 1, output)
+        self.assertIn(json.dumps(str(requests[0]), ensure_ascii=False), output["reason"])
+        request = json.loads(requests[0].read_text(encoding="utf-8"))
+        self.assertEqual(request["project_root"], str(root))
+        return request
+
+    def test_all_direct_repositories_are_reviewed_with_separate_baselines(self):
+        first = self.repository("first repo")
+        second = self.repository("두번째\nrepo")
+        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        for index, root in enumerate((first, second)):
+            (root / "app.py").write_text("value = {}\n".format(index + 2), encoding="utf-8")
+        output = self.hook("Stop")
+        self.assertEqual(output.get("decision"), "block", output)
+        for root in (first, second):
+            request = self.request(root, output)
+            self.assertEqual([item["path"] for item in request["files"]], ["app.py"])
+            self.assertEqual(request["files"][0]["before"]["text"], "value = 1\n")
+        self.assertEqual(self.hook("Stop"), {})
+        self.assertEqual(self.hook("Stop", stop_hook_active=True), {})
+        (second / "app.py").write_text("value = 4\n", encoding="utf-8")
+        subsequent = self.hook("Stop")
+        self.request(second, subsequent)
+        self.assertNotIn(json.dumps(str(first), ensure_ascii=False), subsequent["reason"])
+
+    def test_only_repositories_with_source_changes_request_review(self):
+        source = self.repository("source")
+        documents = self.repository("documents")
+        unchanged = self.repository("unchanged")
+        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assertEqual(self.hook("Stop"), {})
+        (source / "app.py").write_text("value = 2\n", encoding="utf-8")
+        (documents / "README.md").write_text("documentation\n", encoding="utf-8")
+        output = self.hook("Stop")
+        self.request(source, output)
+        for root in (documents, unchanged):
+            self.assertEqual(list((root / ".gpt-review-toolkit").glob("*/review.json")), [])
+
+    def test_discovery_does_not_recurse_or_follow_directory_symlinks(self):
+        direct = self.repository("direct")
+        nested = self.repository("container/nested")
+        (self.root / "linked-repo").symlink_to(nested, target_is_directory=True)
+        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assertFalse((nested / ".gpt-review-toolkit").exists())
+        (nested / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.assertEqual(self.hook("Stop"), {})
+        self.assertTrue((direct / ".gpt-review-toolkit").is_dir())
+
+    def test_existing_git_repository_takes_precedence_over_children(self):
+        root = self.repository("project")
+        nested = self.repository("project/nested")
+        self.assertEqual(self.hook("UserPromptSubmit", cwd=str(root)), {})
+        self.assertFalse((nested / ".gpt-review-toolkit").exists())
+        (root / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.request(root, self.hook("Stop", cwd=str(root)))
+
+    def test_direct_worktrees_are_supported(self):
+        origin = self.repository("container/origin")
+        for args in (("add", "."), ("commit", "-qm", "initial"),
+                     ("worktree", "add", "-qb", "linked", str(self.root / "linked"))):
+            subprocess.check_call(["git", "-C", str(origin)] + list(args), env=self.env)
+        linked = self.root / "linked"
+        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.request(linked, self.hook("Stop"))
+        self.assertFalse((origin / ".gpt-review-toolkit").exists())
+
+    def test_repository_failure_does_not_prevent_other_reviews(self):
+        broken = self.repository("a-broken")
+        healthy = self.repository("z-healthy")
+        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        baseline = next((broken / ".gpt-review-toolkit").glob("*/baseline.json"))
+        baseline.write_text("corrupt", encoding="utf-8")
+        (healthy / "app.py").write_text("value = 2\n", encoding="utf-8")
+        output = self.hook("Stop")
+        self.assertIn(str(broken), output.get("systemMessage", ""))
+        self.request(healthy, output)
+
+    def test_invalid_child_git_metadata_is_reported_without_skipping_healthy_repo(self):
+        broken = self.root / "a-broken"
+        broken.mkdir()
+        (broken / ".git").write_text("invalid git file\n", encoding="utf-8")
+        healthy = self.repository("z-healthy")
+        started = self.hook("UserPromptSubmit")
+        self.assertIn(str(broken), started.get("systemMessage", ""))
+        (healthy / "app.py").write_text("value = 2\n", encoding="utf-8")
+        output = self.hook("Stop")
+        self.assertIn(str(broken), output.get("systemMessage", ""))
+        self.request(healthy, output)
+
+    def test_discovery_timeout_does_not_prevent_other_reviews(self):
+        broken = self.repository("a-timeout")
+        healthy = self.repository("z-healthy")
+        spec = importlib.util.spec_from_file_location("review_hook", str(HOOK))
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        real_git = hook.git
+
+        def timeout_for_broken(root, *args, **kwargs):
+            if root == broken:
+                raise subprocess.TimeoutExpired("git", 15)
+            return real_git(root, *args, **kwargs)
+
+        payload = dict(cwd=str(self.root), session_id="s", turn_id="t")
+        # Inject only the slow process failure; healthy discovery and snapshots use real Git.
+        with mock.patch.dict(os.environ, self.env), mock.patch.object(hook, "git", timeout_for_broken):
+            started = hook.handle(dict(payload, hook_event_name="UserPromptSubmit"))
+            self.assertIn(str(broken), started.get("systemMessage", ""))
+            (healthy / "app.py").write_text("value = 2\n", encoding="utf-8")
+            output = hook.handle(dict(payload, hook_event_name="Stop"))
+        self.assertIn(str(broken), output.get("systemMessage", ""))
+        self.request(healthy, output)
+
+    def test_repositories_added_or_removed_during_turn_are_reported(self):
+        removed = self.repository("removed")
+        healthy = self.repository("healthy")
+        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        # Move it beyond the one-level discovery boundary, without deleting fixture data.
+        (self.root / "archive").mkdir()
+        removed.rename(self.root / "archive" / "removed")
+        added = self.repository("added")
+        (healthy / "app.py").write_text("value = 2\n", encoding="utf-8")
+        output = self.hook("Stop")
+        self.assertIn(str(removed), output.get("systemMessage", ""))
+        self.assertIn(str(added), output.get("systemMessage", ""))
+        self.request(healthy, output)
 
 
 if __name__ == "__main__":
