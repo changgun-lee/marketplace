@@ -1,0 +1,11 @@
+{
+    "name": "gpt-java-formatter",
+    "description": "Codex용 Eclipse Java 포맷팅 스킬과 파일 편집 후 자동 포맷팅 훅",
+    "version": "1.0.0",
+    "author": {
+        "name": "Changgun Lee",
+        "email": "gilchris@estsoft.com"
+    },
+    "skills": "./skills/",
+    "hooks": "./hooks/hooks.json"
+}

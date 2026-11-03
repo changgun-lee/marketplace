@@ -12,9 +12,19 @@
             "description": "Intellij IDEA 비스꾸무리한 느낌으로다가 java 코드를 정리해줌"
         },
         {
+            "name": "gpt-java-formatter",
+            "source": "./plugins/gpt-java-formatter",
+            "description": "Codex용: Eclipse Java 포맷팅 스킬과 파일 편집 후 자동 포맷팅 훅"
+        },
+        {
             "name": "working-space",
             "source": "./plugins/working-space",
             "description": "GitHub 프로젝트들을 위한 작업 공간과 브랜치를 준비하는 스킬들"
+        },
+        {
+            "name": "gpt-workspace",
+            "source": "./plugins/gpt-workspace",
+            "description": "Codex용: 지정한 기반 브랜치로 프로젝트별 작업 브랜치와 .worktrees 작업 공간 생성"
         },
         {
             "name": "create-pr-to-upstream",

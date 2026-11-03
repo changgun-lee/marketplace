@@ -1,0 +1,17 @@
+{
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "^apply_patch$",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "python3 \"${PLUGIN_ROOT}/scripts/format_java.py\" --hook",
+                        "timeout": 600,
+                        "statusMessage": "수정한 Java 파일 포맷팅"
+                    }
+                ]
+            }
+        ]
+    }
+}

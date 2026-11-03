@@ -1,0 +1,728 @@
+///usr/bin/env jbang "$0" "$@" ; exit $?
+//DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.38.0
+//DEPS org.eclipse.platform:org.eclipse.text:3.14.100
+//DEPS org.eclipse.platform:org.eclipse.core.runtime:3.31.100
+//DEPS org.eclipse.platform:org.eclipse.equinox.common:3.19.100
+//DEPS org.eclipse.platform:org.eclipse.core.jobs:3.15.300
+//DEPS org.eclipse.platform:org.eclipse.core.resources:3.20.200
+//DEPS org.eclipse.platform:org.eclipse.core.contenttype:3.9.400
+//DEPS org.eclipse.platform:org.eclipse.equinox.preferences:3.11.100
+
+import org.eclipse.jdt.core.ToolFactory;
+import org.eclipse.jdt.core.dom.*;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.formatter.CodeFormatter;
+import org.eclipse.jface.text.Document;
+import org.eclipse.jface.text.IDocument;
+import org.eclipse.text.edits.TextEdit;
+
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class EclipseFormatter {
+    private static final String ENUM_OFF_TAG = "// @formatter:off // enum-constants-auto";
+    private static final String ENUM_ON_TAG = "// @formatter:on // enum-constants-auto";
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 2) {
+            System.err.println("Usage: EclipseFormatter <config.xml> <file1.java> [file2.java ...]");
+            System.exit(1);
+        }
+
+        String configPath = args[0];
+        Map<String, String> options = loadEclipseConfig(configPath);
+
+        CodeFormatter formatter = ToolFactory.createCodeFormatter(options);
+
+        boolean failed = false;
+        for (int i = 1; i < args.length; i++) {
+            String filePath = args[i];
+            File file = new File(filePath);
+            if (!file.exists() || !filePath.endsWith(".java")) {
+                System.err.println("Invalid Java file: " + filePath);
+                failed = true;
+                continue;
+            }
+
+            try {
+                String content = Files.readString(file.toPath());
+
+                // 1단계: import 정리 (fully qualified name -> import + simple name)
+                String withImports = organizeImports(content, options);
+
+                // 2단계: 중괄호 추가
+                String withBraces = addMissingBraces(withImports, options);
+
+                // 3단계: enum 상수 영역에 @formatter:off 태그 삽입
+                String withEnumTags = wrapEnumConstantsWithFormatterOff(withBraces, options);
+
+                // 4단계: 포맷팅
+                TextEdit edit = formatter.format(
+                    CodeFormatter.K_COMPILATION_UNIT | CodeFormatter.F_INCLUDE_COMMENTS,
+                    withEnumTags,
+                    0,
+                    withEnumTags.length(),
+                    0,
+                    System.lineSeparator()
+                );
+
+                String formatted = withEnumTags;
+                if (edit != null) {
+                    IDocument document = new Document(withEnumTags);
+                    edit.apply(document);
+                    formatted = document.get();
+                }
+
+                // 후처리: enum 상수용 @formatter:off/on 태그 제거
+                formatted = removeEnumFormatterTags(formatted);
+
+                // 후처리: stream(), builder() 등은 이전 줄에 붙임 (builder는 뒤 체이닝 유지)
+                formatted = fixMethodChainingStart(formatted);
+
+                // 후처리: 한 줄짜리 /** ... */ 주석을 //로 변경
+                formatted = convertSingleLineBlockCommentToLineComment(formatted);
+
+                if (!content.equals(formatted)) {
+                    Files.writeString(file.toPath(), formatted);
+                    System.out.println("Formatted: " + filePath);
+                }
+            } catch (Exception e) {
+                System.err.println("Error formatting " + filePath + ": " + e.getMessage());
+                e.printStackTrace();
+                failed = true;
+            }
+        }
+        if (failed) {
+            System.exit(1);
+        }
+    }
+
+    /**
+     * stream(), builder() 등 특정 메서드는 이전 줄에 붙임
+     * builder 계열은 뒤의 체이닝 메서드는 새 줄로 유지
+     * 예: "list\n    .stream()" -> "list.stream()"
+     * 예: "Foo\n    .Builder()\n    .method()" -> "Foo.Builder()\n                .method()"
+     */
+    private static String fixMethodChainingStart(String source) {
+        String result = source;
+
+        // 1. 일반 메서드들: 단순히 이전 줄에 붙임
+        String[] simpleMethodsToKeepOnSameLine = {
+            "stream", "parallelStream",
+            "of", "empty", "singleton"
+        };
+
+        for (String method : simpleMethodsToKeepOnSameLine) {
+            Pattern pattern = Pattern.compile(
+                "(\\S)(\\s*\\n\\s*)(\\." + method + "\\s*\\()",
+                Pattern.CASE_INSENSITIVE
+            );
+            result = pattern.matcher(result).replaceAll("$1$3");
+        }
+
+        // 2. builder 계열: 이전 줄에 붙이되, 뒤의 체이닝은 새 줄로 유지
+        String[] builderMethods = {"builder", "newBuilder", "toBuilder"};
+        String chainIndent = "                "; // 16칸
+
+        for (String method : builderMethods) {
+            // Builder() 뒤에 .메서드(가 바로 오는 경우: 줄바꿈 유지하며 이전 줄에 붙임
+            Pattern patternWithChain = Pattern.compile(
+                "(\\S)(\\s*\\n\\s*)(\\." + method + "\\s*\\(\\))(\\s*\\n\\s*)(\\.[a-zA-Z]+\\()",
+                Pattern.CASE_INSENSITIVE
+            );
+            result = patternWithChain.matcher(result).replaceAll("$1$3\n" + chainIndent + "$5");
+
+            // Builder() 뒤에 체이닝이 없는 경우: 단순히 이전 줄에 붙임
+            Pattern patternSimple = Pattern.compile(
+                "(\\S)(\\s*\\n\\s*)(\\." + method + "\\s*\\()(?!\\)\\s*\\n\\s*\\.)",
+                Pattern.CASE_INSENSITIVE
+            );
+            result = patternSimple.matcher(result).replaceAll("$1$3");
+        }
+
+        // 3. Builder() 뒤에 바로 .메서드(가 붙어있는 경우 (같은 줄에서)
+        Pattern builderInlinePattern = Pattern.compile(
+            "(Builder\\(\\))(\\.[a-zA-Z]+\\()",
+            Pattern.CASE_INSENSITIVE
+        );
+        result = builderInlinePattern.matcher(result).replaceAll("$1\n" + chainIndent + "$2");
+
+        // 4. new ClassName<...>() 뒤에 바로 .메서드(가 붙어있는 경우
+        // 예: new ExcelMaker<DosonSalesRow>().downloadDirectory(
+        Pattern newInstancePattern = Pattern.compile(
+            "(new\\s+[\\w.]+(?:<[^>]+>)?\\s*\\(\\))(\\.[a-zA-Z]+\\()"
+        );
+        result = newInstancePattern.matcher(result).replaceAll("$1\n" + chainIndent + "$2");
+
+        return result;
+    }
+
+    // 한 줄을 통째로 차지하는 /** ... */ 주석을 라인 주석(//)으로 변경한다.
+    //   "    /** 설명 */" -> "    // 설명"
+    //   "    /** */"      -> "    //"
+    // 주석 앞이나 뒤에 코드가 있거나 여러 줄에 걸친 주석은 건드리지 않는다.
+    // 문자열 리터럴이나 텍스트 블록("""...""") 안의 /** */를 잘못 변환하지 않도록
+    // 정규식이 아니라 AST의 주석 목록에서 실제 주석 노드만 찾아 변환한다.
+    private static String convertSingleLineBlockCommentToLineComment(String source) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(source.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+
+        Map<String, String> compilerOptions = new HashMap<>();
+        compilerOptions.put("org.eclipse.jdt.core.compiler.source", "17");
+        compilerOptions.put("org.eclipse.jdt.core.compiler.compliance", "17");
+        compilerOptions.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17");
+        parser.setCompilerOptions(compilerOptions);
+
+        CompilationUnit cu;
+        try {
+            cu = (CompilationUnit) parser.createAST(null);
+        } catch (Exception e) {
+            return source;
+        }
+
+        List<?> comments = cu.getCommentList();
+        if (comments == null || comments.isEmpty()) {
+            return source;
+        }
+
+        // 변환 대상 주석의 영역 수집 {start, end}
+        List<int[]> targets = new ArrayList<>();
+        for (Object obj : comments) {
+            Comment comment = (Comment) obj;
+            int start = comment.getStartPosition();
+            if (start < 0) {
+                continue;
+            }
+            int end = start + comment.getLength();
+            String text = source.substring(start, end);
+
+            // /** 로 시작하는 주석만 (일반 /* 블록 주석, // 라인 주석 제외)
+            if (!text.startsWith("/**")) {
+                continue;
+            }
+            // 여러 줄 주석은 제외
+            if (text.indexOf('\n') != -1) {
+                continue;
+            }
+            // 줄 전체가 주석인 경우만: 주석 앞쪽에 코드가 있으면 제외
+            int lineStart = source.lastIndexOf('\n', start - 1) + 1;
+            if (!source.substring(lineStart, start).trim().isEmpty()) {
+                continue;
+            }
+            // 주석 뒤쪽에 코드가 있으면 제외
+            int lineEnd = source.indexOf('\n', end);
+            if (lineEnd == -1) {
+                lineEnd = source.length();
+            }
+            if (!source.substring(end, lineEnd).trim().isEmpty()) {
+                continue;
+            }
+            targets.add(new int[]{start, end});
+        }
+
+        if (targets.isEmpty()) {
+            return source;
+        }
+
+        // 뒤에서부터 치환해야 앞쪽 오프셋이 어긋나지 않음
+        targets.sort((a, b) -> b[0] - a[0]);
+
+        StringBuilder sb = new StringBuilder(source);
+        for (int[] target : targets) {
+            int start = target[0];
+            int end = target[1];
+            String inner = extractCommentBody(source.substring(start, end));
+            // 들여쓰기(주석 앞 공백)와 줄바꿈은 그대로 두고 주석 본문만 치환
+            sb.replace(start, end, inner.isEmpty() ? "//" : "// " + inner);
+        }
+
+        return sb.toString();
+    }
+
+    // /** ... */ 주석에서 앞뒤의 슬래시/별표를 벗겨내고 안쪽 본문만 다듬어 돌려준다.
+    // 예: "/** 설명 */" -> "설명", "/*** 설명 **/" -> "설명", "/** */" -> ""
+    private static String extractCommentBody(String comment) {
+        int begin = 0;
+        while (begin < comment.length()
+            && (comment.charAt(begin) == '/' || comment.charAt(begin) == '*')) {
+            begin++;
+        }
+        int finish = comment.length();
+        while (finish > begin
+            && (comment.charAt(finish - 1) == '/' || comment.charAt(finish - 1) == '*')) {
+            finish--;
+        }
+        return comment.substring(begin, finish).trim();
+    }
+
+    /**
+     * enum 상수 영역에 @formatter:off/on 태그를 자동 삽입하여 포맷팅에서 제외
+     * 익명 클래스 본문을 가진 enum 상수는 제외
+     */
+    private static String wrapEnumConstantsWithFormatterOff(String source, Map<String, String> options) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(source.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+
+        Map<String, String> compilerOptions = new HashMap<>();
+        compilerOptions.put("org.eclipse.jdt.core.compiler.source",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.source", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.compliance",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.compliance", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17"));
+        parser.setCompilerOptions(compilerOptions);
+
+        CompilationUnit cu = (CompilationUnit) parser.createAST(null);
+
+        List<int[]> regions = new ArrayList<>();
+
+        cu.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(EnumDeclaration node) {
+                List<?> constants = node.enumConstants();
+                if (constants.isEmpty()) {
+                    return true;
+                }
+
+                // 익명 클래스 본문을 가진 상수가 있으면 제외
+                for (Object obj : constants) {
+                    EnumConstantDeclaration constant = (EnumConstantDeclaration) obj;
+                    if (constant.getAnonymousClassDeclaration() != null) {
+                        return true;
+                    }
+                }
+
+                EnumConstantDeclaration first = (EnumConstantDeclaration) constants.get(0);
+                EnumConstantDeclaration last = (EnumConstantDeclaration) constants.get(constants.size() - 1);
+
+                // 한 줄짜리 enum은 제외
+                String constantsText = source.substring(first.getStartPosition(),
+                    last.getStartPosition() + last.getLength());
+                if (!constantsText.contains("\n")) {
+                    return true;
+                }
+
+                // 이미 @formatter:off로 보호되어 있으면 제외
+                int enumBodyStart = node.getStartPosition();
+                String beforeConstants = source.substring(enumBodyStart, first.getStartPosition());
+                if (beforeConstants.contains("@formatter:off")) {
+                    return true;
+                }
+
+                // @formatter:off 삽입 위치: 첫 번째 상수의 줄 시작
+                int offPos = source.lastIndexOf('\n', first.getStartPosition() - 1) + 1;
+
+                // @formatter:on 삽입 위치: 세미콜론 또는 닫는 중괄호 다음 줄
+                int lastEnd = last.getStartPosition() + last.getLength();
+                int onPos = lastEnd;
+
+                for (int i = lastEnd; i < source.length(); i++) {
+                    char c = source.charAt(i);
+                    if (c == ';') {
+                        int nextNewline = source.indexOf('\n', i);
+                        onPos = (nextNewline != -1) ? nextNewline + 1 : source.length();
+                        break;
+                    } else if (c == '}') {
+                        onPos = source.lastIndexOf('\n', i - 1) + 1;
+                        break;
+                    } else if (c == ',' || Character.isWhitespace(c)) {
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+
+                regions.add(new int[]{offPos, onPos});
+                return true;
+            }
+        });
+
+        if (regions.isEmpty()) {
+            return source;
+        }
+
+        // 역순으로 정렬 (뒤에서부터 삽입해야 위치가 어긋나지 않음)
+        regions.sort((a, b) -> b[0] - a[0]);
+
+        StringBuilder sb = new StringBuilder(source);
+        for (int[] region : regions) {
+            sb.insert(region[1], ENUM_ON_TAG + "\n");
+            sb.insert(region[0], ENUM_OFF_TAG + "\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 자동 삽입된 enum 상수용 @formatter:off/on 태그 제거
+     */
+    private static String removeEnumFormatterTags(String formatted) {
+        formatted = formatted.replaceAll("[ \\t]*" + Pattern.quote(ENUM_OFF_TAG) + "\\r?\\n", "");
+        formatted = formatted.replaceAll("[ \\t]*" + Pattern.quote(ENUM_ON_TAG) + "\\r?\\n", "");
+        return formatted;
+    }
+
+    /**
+     * fully qualified name을 import 문으로 변환
+     * 예: java.util.regex.Pattern -> import java.util.regex.Pattern; + Pattern
+     */
+    private static String organizeImports(String source, Map<String, String> options) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(source.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+
+        Map<String, String> compilerOptions = new HashMap<>();
+        compilerOptions.put("org.eclipse.jdt.core.compiler.source",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.source", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.compliance",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.compliance", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17"));
+        parser.setCompilerOptions(compilerOptions);
+
+        CompilationUnit cu = (CompilationUnit) parser.createAST(null);
+
+        // 기존 import 수집
+        Set<String> existingImports = new HashSet<>();
+        for (Object imp : cu.imports()) {
+            ImportDeclaration importDecl = (ImportDeclaration) imp;
+            existingImports.add(importDecl.getName().getFullyQualifiedName());
+        }
+
+        // fully qualified name 수집 (코드 내에서 사용된 것들)
+        Map<String, String> fqnToSimpleName = new LinkedHashMap<>();
+        Set<String> simpleNamesInUse = new HashSet<>();
+
+        cu.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(QualifiedName node) {
+                // import 문 내부는 건너뜀
+                if (isInsideImport(node)) {
+                    return false;
+                }
+
+                String fqn = node.getFullyQualifiedName();
+                // 패키지.클래스 형태인지 확인 (최소 2개 이상의 부분, 마지막이 대문자로 시작)
+                if (isFullyQualifiedClassName(fqn)) {
+                    String simpleName = node.getName().getIdentifier();
+                    // java.lang은 import 불필요
+                    if (!fqn.startsWith("java.lang.") && !existingImports.contains(fqn)) {
+                        // 같은 simple name이 이미 다른 fqn으로 사용 중이면 충돌 - 건너뜀
+                        if (!simpleNamesInUse.contains(simpleName) || fqnToSimpleName.containsKey(fqn)) {
+                            fqnToSimpleName.put(fqn, simpleName);
+                            simpleNamesInUse.add(simpleName);
+                        }
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(QualifiedType node) {
+                // import 문 내부는 건너뜀
+                if (isInsideImport(node)) {
+                    return false;
+                }
+
+                String fqn = getFullyQualifiedName(node);
+                if (fqn != null && isFullyQualifiedClassName(fqn)) {
+                    String simpleName = node.getName().getIdentifier();
+                    if (!fqn.startsWith("java.lang.") && !existingImports.contains(fqn)) {
+                        if (!simpleNamesInUse.contains(simpleName) || fqnToSimpleName.containsKey(fqn)) {
+                            fqnToSimpleName.put(fqn, simpleName);
+                            simpleNamesInUse.add(simpleName);
+                        }
+                    }
+                }
+                return true;
+            }
+
+            private boolean isInsideImport(ASTNode node) {
+                ASTNode parent = node.getParent();
+                while (parent != null) {
+                    if (parent instanceof ImportDeclaration) {
+                        return true;
+                    }
+                    parent = parent.getParent();
+                }
+                return false;
+            }
+
+            private String getFullyQualifiedName(QualifiedType type) {
+                StringBuilder sb = new StringBuilder();
+                Type qualifier = type.getQualifier();
+                if (qualifier instanceof SimpleType) {
+                    sb.append(((SimpleType) qualifier).getName().getFullyQualifiedName());
+                } else if (qualifier instanceof QualifiedType) {
+                    String qfn = getFullyQualifiedName((QualifiedType) qualifier);
+                    if (qfn != null) {
+                        sb.append(qfn);
+                    }
+                }
+                if (sb.length() > 0) {
+                    sb.append(".");
+                }
+                sb.append(type.getName().getIdentifier());
+                return sb.toString();
+            }
+        });
+
+        if (fqnToSimpleName.isEmpty()) {
+            return source;
+        }
+
+        // 소스 코드에서 fully qualified name을 simple name으로 변경
+        String result = source;
+        for (Map.Entry<String, String> entry : fqnToSimpleName.entrySet()) {
+            String fqn = entry.getKey();
+            String simpleName = entry.getValue();
+            // 단어 경계를 고려하여 변경 (import 문은 제외)
+            result = replaceOutsideImports(result, fqn, simpleName);
+        }
+
+        // import 문 추가
+        result = addImportStatements(result, fqnToSimpleName.keySet());
+
+        return result;
+    }
+
+    /**
+     * fully qualified class name인지 확인
+     * 예: java.util.List -> true, myVariable.field -> false
+     */
+    private static boolean isFullyQualifiedClassName(String name) {
+        String[] parts = name.split("\\.");
+        if (parts.length < 2) {
+            return false;
+        }
+        // 마지막 부분이 대문자로 시작해야 함 (클래스명)
+        String lastPart = parts[parts.length - 1];
+        if (lastPart.isEmpty() || !Character.isUpperCase(lastPart.charAt(0))) {
+            return false;
+        }
+        // 패키지 부분은 소문자로 시작해야 함
+        for (int i = 0; i < parts.length - 1; i++) {
+            if (parts[i].isEmpty() || !Character.isLowerCase(parts[i].charAt(0))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * import 문 외부에서만 fully qualified name을 simple name으로 변경
+     */
+    private static String replaceOutsideImports(String source, String fqn, String simpleName) {
+        // import 문 영역 찾기
+        int importEnd = findImportSectionEnd(source);
+
+        if (importEnd == -1) {
+            // import 섹션이 없으면 전체에서 변경
+            return source.replace(fqn, simpleName);
+        }
+
+        // import 섹션 이후 부분만 변경
+        String beforeImports = source.substring(0, importEnd);
+        String afterImports = source.substring(importEnd);
+        afterImports = afterImports.replace(fqn, simpleName);
+
+        return beforeImports + afterImports;
+    }
+
+    /**
+     * import 섹션의 끝 위치 찾기
+     */
+    private static int findImportSectionEnd(String source) {
+        Pattern importPattern = Pattern.compile("^import\\s+.*?;\\s*$", Pattern.MULTILINE);
+        Matcher matcher = importPattern.matcher(source);
+        int lastEnd = -1;
+        while (matcher.find()) {
+            lastEnd = matcher.end();
+        }
+        return lastEnd;
+    }
+
+    /**
+     * import 문 추가
+     */
+    private static String addImportStatements(String source, Set<String> imports) {
+        if (imports.isEmpty()) {
+            return source;
+        }
+
+        // 마지막 import 문 위치 찾기
+        Pattern lastImportPattern = Pattern.compile("^(import\\s+.*?;\\s*)$", Pattern.MULTILINE);
+        Matcher matcher = lastImportPattern.matcher(source);
+        int insertPosition = -1;
+        while (matcher.find()) {
+            insertPosition = matcher.end();
+        }
+
+        if (insertPosition == -1) {
+            // import가 없으면 package 문 다음에 추가
+            Pattern packagePattern = Pattern.compile("^package\\s+.*?;\\s*$", Pattern.MULTILINE);
+            Matcher pkgMatcher = packagePattern.matcher(source);
+            if (pkgMatcher.find()) {
+                insertPosition = pkgMatcher.end();
+            } else {
+                // package도 없으면 맨 앞에 추가
+                insertPosition = 0;
+            }
+        }
+
+        // 정렬된 import 문 생성
+        List<String> sortedImports = new ArrayList<>(imports);
+        Collections.sort(sortedImports);
+
+        StringBuilder importBlock = new StringBuilder();
+        if (insertPosition > 0 && source.charAt(insertPosition - 1) != '\n') {
+            importBlock.append("\n");
+        }
+        for (String imp : sortedImports) {
+            importBlock.append("import ").append(imp).append(";\n");
+        }
+
+        return source.substring(0, insertPosition) + importBlock + source.substring(insertPosition);
+    }
+
+    /**
+     * if, for, while, do-while 문에 중괄호가 없으면 추가
+     */
+    private static String addMissingBraces(String source, Map<String, String> options) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(source.toCharArray());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+
+        Map<String, String> compilerOptions = new HashMap<>();
+        compilerOptions.put("org.eclipse.jdt.core.compiler.source",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.source", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.compliance",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.compliance", "17"));
+        compilerOptions.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform",
+            options.getOrDefault("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17"));
+        parser.setCompilerOptions(compilerOptions);
+
+        CompilationUnit cu = (CompilationUnit) parser.createAST(null);
+        cu.recordModifications();
+
+        AST ast = cu.getAST();
+        ASTRewrite rewriter = ASTRewrite.create(ast);
+
+        cu.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(IfStatement node) {
+                // then 부분 처리
+                Statement thenStmt = node.getThenStatement();
+                if (thenStmt != null && !(thenStmt instanceof Block)) {
+                    Block block = ast.newBlock();
+                    Statement copy = (Statement) ASTNode.copySubtree(ast, thenStmt);
+                    block.statements().add(copy);
+                    rewriter.replace(thenStmt, block, null);
+                }
+
+                // else 부분 처리 (else if는 제외)
+                Statement elseStmt = node.getElseStatement();
+                if (elseStmt != null && !(elseStmt instanceof Block) && !(elseStmt instanceof IfStatement)) {
+                    Block block = ast.newBlock();
+                    Statement copy = (Statement) ASTNode.copySubtree(ast, elseStmt);
+                    block.statements().add(copy);
+                    rewriter.replace(elseStmt, block, null);
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(ForStatement node) {
+                Statement body = node.getBody();
+                if (body != null && !(body instanceof Block)) {
+                    Block block = ast.newBlock();
+                    Statement copy = (Statement) ASTNode.copySubtree(ast, body);
+                    block.statements().add(copy);
+                    rewriter.replace(body, block, null);
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(EnhancedForStatement node) {
+                Statement body = node.getBody();
+                if (body != null && !(body instanceof Block)) {
+                    Block block = ast.newBlock();
+                    Statement copy = (Statement) ASTNode.copySubtree(ast, body);
+                    block.statements().add(copy);
+                    rewriter.replace(body, block, null);
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(WhileStatement node) {
+                Statement body = node.getBody();
+                if (body != null && !(body instanceof Block)) {
+                    Block block = ast.newBlock();
+                    Statement copy = (Statement) ASTNode.copySubtree(ast, body);
+                    block.statements().add(copy);
+                    rewriter.replace(body, block, null);
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(DoStatement node) {
+                Statement body = node.getBody();
+                if (body != null && !(body instanceof Block)) {
+                    Block block = ast.newBlock();
+                    Statement copy = (Statement) ASTNode.copySubtree(ast, body);
+                    block.statements().add(copy);
+                    rewriter.replace(body, block, null);
+                }
+                return true;
+            }
+        });
+
+        try {
+            IDocument document = new Document(source);
+            TextEdit edits = rewriter.rewriteAST(document, compilerOptions);
+            edits.apply(document);
+            return document.get();
+        } catch (Exception e) {
+            System.err.println("Warning: Could not add braces: " + e.getMessage());
+            return source;
+        }
+    }
+
+    private static Map<String, String> loadEclipseConfig(String configPath) throws Exception {
+        Map<String, String> options = new HashMap<>();
+        File configFile = new File(configPath);
+
+        // 기본 설정
+        options.put("org.eclipse.jdt.core.formatter.tabulation.char", "space");
+        options.put("org.eclipse.jdt.core.formatter.tabulation.size", "4");
+        options.put("org.eclipse.jdt.core.formatter.indentation.size", "4");
+        options.put("org.eclipse.jdt.core.compiler.source", "17");
+        options.put("org.eclipse.jdt.core.compiler.compliance", "17");
+        options.put("org.eclipse.jdt.core.compiler.codegen.targetPlatform", "17");
+
+        if (!configFile.exists()) {
+            return options;
+        }
+
+        // Eclipse formatter XML 파싱
+        String content = Files.readString(configFile.toPath());
+
+        // setting id="..." value="..." 패턴 매칭
+        Pattern pattern = Pattern.compile("<setting\\s+id=\"([^\"]+)\"\\s+value=\"([^\"]*)\"\\s*/>");
+        Matcher matcher = pattern.matcher(content);
+
+        while (matcher.find()) {
+            options.put(matcher.group(1), matcher.group(2));
+        }
+
+        return options;
+    }
+}
