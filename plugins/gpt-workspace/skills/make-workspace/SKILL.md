@@ -54,9 +54,11 @@ python3 "/실제/플러그인/경로/scripts/make_workspace.py" --root "/프로�
 `feature/로그인-API-개선`, 경로 `<프로젝트>/.worktrees/feature/로그인-API-개선`.
 `feature/` 뒤에는 `/`가 남지 않는다. 빈 작업명은 받지 않는다.
 
-기반이 `xxx`이면 origin에서 조회한 `xxx`와 로컬 `xxx`를 확인한다. 둘 중 하나만 존재하면
-그 브랜치를 사용하고, 둘이 같은 커밋이면 원격을 사용한다. 서로 다르면
-`refs/heads/xxx`와 `origin/xxx` 중 선택을 질문한다. 명시한 기반은 그대로 사용한다.
+별도 언급 없이 기반을 `xxx`로 지정하면 **원격 `origin/xxx`**를 의미한다.
+로컬 `xxx`의 존재 여부나 커밋 차이와 관계없이 원격을 사용하며, 로컬·원격 선택을 다시 묻지 않는다.
+`--base xxx`, `--base origin/xxx`, `--base refs/remotes/origin/xxx`는 모두 같은 원격 브랜치를 지정한다.
+사용자가 로컬 브랜치를 명시한 경우에는 `--base refs/heads/xxx`로 전달한다.
+원격에 `xxx`가 없으면 로컬로 대체하지 않고 기반 부재로 처리하여 사용자 결정을 받는다.
 
 원격 존재 여부는 `ls-remote`로 확인하므로, 삭제된 원격의 오래된 로컬 추적 ref는 사용하지 않는다.
 일반 `git worktree add -b ... origin/xxx`는 기반을 추적할 수 있으므로 실행기를 사용한다.

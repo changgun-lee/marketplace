@@ -208,16 +208,19 @@ class WorkspaceTests(unittest.TestCase):
         self.assert_no_workspace(second)
         self.assertEqual((second / ".worktrees").read_text(), "keep this file")
 
-    def test_local_and_remote_base_divergence_requires_an_explicit_ref(self):
+    def test_unqualified_base_uses_remote_when_local_commit_differs(self):
         (self.project / "local.txt").write_text("local\n")
         self.git(self.project, "add", "local.txt")
         self.git(self.project, "commit", "--quiet", "-m", "local only")
-        result = self.run_workspace()
-        self.assertNotEqual(result.returncode, 0)
-        self.assert_no_workspace()
         remote_commit = self.git(self.project, "rev-parse", "origin/develop")
-        self.success(self.run_workspace(base="origin/develop"))
-        self.assertEqual(self.git(self.project, "rev-parse", "feature/sample"), remote_commit)
+        plan = self.success(self.run_workspace("sample", "develop", None, "--dry-run"))
+        self.assertEqual(plan["workspaces"][0]["base_ref"], "refs/remotes/origin/develop")
+        self.assertEqual(plan["workspaces"][0]["base_commit"], remote_commit)
+        self.assert_no_workspace()
+        self.success(self.run_workspace())
+        self.assertEqual(self.git(self.project / ".worktrees/feature/sample", "rev-parse", "HEAD"),
+                         remote_commit)
+        self.assertEqual(self.upstream(), "")
         local_commit = self.git(self.project, "rev-parse", "develop")
         self.success(self.run_workspace(task="local", base="refs/heads/develop"))
         self.assertEqual(self.git(self.project, "rev-parse", "feature/local"), local_commit)
@@ -270,10 +273,26 @@ class WorkspaceTests(unittest.TestCase):
                          "feature/sample")
         self.assertTrue((second / ".worktrees/feature/sample").exists())
 
-    def test_local_only_base_is_supported(self):
+    def test_unqualified_local_only_base_fails_without_falling_back(self):
         self.git(self.project, "branch", "local-base")
-        self.success(self.run_workspace(base="local-base"))
+        for extra in [("--dry-run",), ()]:
+            with self.subTest(extra=extra):
+                result = self.run_workspace("sample", "local-base", None, *extra)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("local-base", json.loads(result.stdout)["error"])
+                self.assert_no_workspace()
+
+    def test_explicit_local_only_base_is_supported(self):
+        self.git(self.project, "branch", "local-base")
+        self.success(self.run_workspace(base="refs/heads/local-base"))
         self.assertEqual(self.upstream(), "")
+
+    def test_deleted_remote_base_does_not_use_local_or_stale_tracking_ref(self):
+        self.git(self.root, "--git-dir=" + str(self.origin), "update-ref", "-d",
+                 "refs/heads/develop")
+        result = self.run_workspace()
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_no_workspace()
 
     def test_existing_branch_and_path_are_preserved_and_require_a_decision(self):
         self.git(self.project, "branch", "feature/sample")

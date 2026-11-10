@@ -103,7 +103,7 @@ def parse_base(project, base):
     elif base.startswith("refs/"):
         raise WorkspaceError("기반은 로컬 브랜치 또는 origin 브랜치로 지정하세요.")
     else:
-        mode, name = "auto", base
+        mode, name = "remote", base
     if not name or name.startswith("-") or git(
         project, "check-ref-format", "refs/heads/" + name, check=False
     ).returncode:
@@ -197,12 +197,7 @@ def plan_project(project, base, branch):
     local = git(project, "rev-parse", "--verify", local_ref + "^{commit}", check=False)
     local_oid = without_final_lf(local.stdout) if local.returncode == 0 else None
     remote_oid = heads.get(name)
-    if mode == "auto" and local_oid and remote_oid and local_oid != remote_oid:
-        raise WorkspaceError(
-            "{}: 로컬 {}와 origin/{}의 커밋이 다릅니다. "
-            "refs/heads/{} 또는 origin/{}를 선택하세요.".format(project, name, name, name, name)
-        )
-    use_remote = mode == "remote" or (mode == "auto" and remote_oid is not None)
+    use_remote = mode == "remote"
     oid = remote_oid if use_remote else local_oid
     if oid is None:
         raise WorkspaceError("{}: 기반 브랜치 {}가 없습니다.".format(project, base))
@@ -280,7 +275,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=".", help="탐색 시작 경로: 현재 프로젝트 또는 프로젝트들의 상위 폴더")
     parser.add_argument("--project", action="append", help="대상을 정확히 지정 (반복 가능, root 기준 경로)")
-    parser.add_argument("--base", required=True, help="기반 브랜치: xxx, origin/xxx 또는 refs/heads/xxx")
+    parser.add_argument("--base", required=True,
+                        help="기반 브랜치: xxx는 origin/xxx로 해석, 로컬은 refs/heads/xxx")
     parser.add_argument("--task", required=True, help="작업명 (feature/ 접두사는 자동 추가)")
     parser.add_argument("--dry-run", action="store_true", help="원격 조회와 사전 검사만 실행")
     args = parser.parse_args()

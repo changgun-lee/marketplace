@@ -1,7 +1,7 @@
 {
     "name": "gpt-workspace",
     "description": "Codex용: 지정한 기반 브랜치로 프로젝트별 작업 브랜치와 .worktrees 작업 공간 생성",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": {
         "name": "Changgun Lee",
         "email": "gilchris@estsoft.com"
