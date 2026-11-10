@@ -4,6 +4,7 @@ import json
 import importlib.util
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -390,10 +391,204 @@ class WorkspaceReviewHookTests(unittest.TestCase):
         self.assertEqual(request["project_root"], str(root))
         return request
 
+    def assert_started(self, **extra):
+        output = self.hook("UserPromptSubmit", **extra)
+        self.assertNotIn("systemMessage", output)
+        context = output["hookSpecificOutput"]
+        self.assertEqual(context["hookEventName"], "UserPromptSubmit")
+        self.assertIn("register", context["additionalContext"])
+        self.assertNotIn("decision", output)
+        return output
+
+    def worktree(self, name="project/.worktrees/feature/task"):
+        origin = self.root / "project"
+        if not origin.exists():
+            self.repository("project")
+            for args in (("add", "."), ("commit", "-qm", "initial")):
+                subprocess.check_call(["git", "-C", str(origin)] + list(args), env=self.env)
+            (origin / ".git/info/exclude").write_text(".worktrees/\n", encoding="utf-8")
+        linked = self.root / name
+        subprocess.check_call(["git", "-C", str(origin), "worktree", "add", "-q", "--detach",
+                               str(linked)], env=self.env)
+        return linked
+
+    def register(self, root, session="s", turn="t", cwd=None, success=True):
+        result = subprocess.run(
+            [sys.executable, str(HOOK), "register", "--cwd", str(cwd or self.root),
+             "--session-id", session, "--turn-id", turn, "--worktree", str(root)],
+            input="", env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        self.assertEqual(result.returncode, 0 if success else 1, result.stdout + result.stderr)
+        output = json.loads(result.stdout)
+        if success:
+            self.assertEqual(output["registered"], str(root.resolve()))
+        else:
+            self.assertIn("감지 실패", output["systemMessage"])
+        return output
+
+    def test_parent_session_registers_nested_worktree_before_edit_and_commit(self):
+        linked = self.worktree("project/.worktrees/feature/한글 space\nquote'$")
+        self.hook("UserPromptSubmit")
+        registered = self.register(linked)
+        baseline = Path(registered["baseline"])
+        base_head = json.loads(baseline.read_text())["head"]
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        for args in (("add", "app.py"), ("commit", "-qm", "update")):
+            subprocess.check_call(["git", "-C", str(linked)] + list(args), env=self.env)
+        self.assertEqual(subprocess.check_output(["git", "-C", str(linked), "status", "--porcelain"]), b"")
+        output = self.hook("Stop")
+        request = self.request(linked, output)
+        self.assertEqual(request["base_head"], base_head)
+        self.assertNotEqual(request["head"], base_head)
+        self.assertEqual([item["path"] for item in request["files"]], ["app.py"])
+        self.assertEqual(self.hook("Stop"), {})
+
+    def test_registration_preserves_first_snapshot_and_existing_dirty_content(self):
+        linked = self.worktree()
+        self.hook("UserPromptSubmit")
+        (linked / "app.py").write_text("preexisting = True\n", encoding="utf-8")
+        baseline = Path(self.register(linked)["baseline"])
+        original = baseline.read_bytes()
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.register(linked)
+        self.assertEqual(baseline.read_bytes(), original)
+        self.hook("UserPromptSubmit")  # Duplicate delivery must not replace the baseline either.
+        self.assertEqual(baseline.read_bytes(), original)
+        request = self.request(linked, self.hook("Stop"))
+        self.assertEqual(request["files"][0]["before"]["text"], "preexisting = True\n")
+
+    def test_missing_registered_snapshot_is_reported_and_not_recreated(self):
+        linked = self.worktree()
+        self.hook("UserPromptSubmit")
+        baseline = Path(self.register(linked)["baseline"])
+        baseline.unlink()
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        output = self.hook("Stop")
+        self.assertIn(str(linked), output["systemMessage"])
+        self.assertIn("시작 스냅샷", output["systemMessage"])
+        self.assertNotIn("decision", output)
+        self.register(linked, success=False)
+        self.assertFalse(baseline.exists())
+
+    def test_corrupt_registered_snapshot_does_not_prevent_healthy_review(self):
+        linked = self.worktree()
+        self.hook("UserPromptSubmit")
+        baseline = Path(self.register(linked)["baseline"])
+        baseline.write_text("corrupt", encoding="utf-8")
+        (self.root / "project/app.py").write_text("value = 3\n", encoding="utf-8")
+        output = self.hook("Stop")
+        self.assertIn(str(linked), output["systemMessage"])
+        self.request(self.root / "project", output)
+        self.register(linked, success=False)
+        self.assertEqual(baseline.read_text(), "corrupt")
+
+    def test_unregistered_worktree_is_not_scanned_or_warned(self):
+        linked = self.worktree()
+        other = self.worktree("project/.worktrees/feature/other-session")
+        self.hook("UserPromptSubmit")
+        self.register(linked)
+        (other / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.assertEqual(self.hook("Stop"), {})
+        self.assertFalse((other / ".gpt-review-toolkit").exists())
+
+    def test_registered_worktree_is_resnapshotted_next_turn_but_not_in_other_session(self):
+        linked = self.worktree()
+        self.hook("UserPromptSubmit")
+        self.register(linked)
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.hook("UserPromptSubmit", session_id="other")
+        self.assertEqual(self.hook("Stop", session_id="other"), {})
+        self.request(linked, self.hook("Stop"))
+        self.hook("UserPromptSubmit", turn_id="next")
+        self.assertEqual(self.hook("Stop", turn_id="next"), {})
+        self.register(linked, success=False)  # Stale turn cannot replace the new baseline.
+        (linked / "app.py").write_text("value = 3\n", encoding="utf-8")
+        request = self.request(linked, self.hook("Stop", turn_id="next"))
+        self.assertEqual(request["files"][0]["before"]["text"], "value = 2\n")
+
+    def test_worktree_created_after_prompt_can_be_registered_from_git_parent(self):
+        origin = self.repository("project")
+        for args in (("add", "."), ("commit", "-qm", "initial")):
+            subprocess.check_call(["git", "-C", str(origin)] + list(args), env=self.env)
+        self.hook("UserPromptSubmit", cwd=str(origin))
+        linked = self.worktree()
+        self.register(linked, cwd=origin)
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.request(linked, self.hook("Stop", cwd=str(origin)))
+
+    def test_removed_registered_worktree_is_reported_without_recreating_directory(self):
+        linked = self.worktree()
+        self.hook("UserPromptSubmit")
+        self.register(linked)
+        archived = linked.with_name("archived")
+        linked.rename(archived)
+        output = self.hook("Stop")
+        self.assertIn(str(linked), output["systemMessage"])
+        self.assertFalse(linked.exists())
+
+    def test_registration_requires_active_turn_and_exact_git_worktree_root(self):
+        linked = self.worktree()
+        self.register(linked, success=False)
+        self.hook("UserPromptSubmit")
+        plain = linked / "plain"
+        plain.mkdir()
+        self.register(plain, success=False)
+        self.assertFalse((plain / ".gpt-review-toolkit").exists())
+
+    def test_failed_registration_snapshot_remains_visible_at_stop(self):
+        linked = self.worktree()
+        self.hook("UserPromptSubmit")
+        target = self.root / "state-target"
+        target.mkdir()
+        (linked / ".gpt-review-toolkit").symlink_to(target)
+        self.register(linked, success=False)
+        self.assertIn(str(linked), self.hook("Stop")["systemMessage"])
+        self.assertEqual(list(target.iterdir()), [])
+
+    def test_start_notice_registration_command_handles_shell_characters(self):
+        linked = self.worktree("project/.worktrees/feature/space '한글\n$(exit 7)")
+        session = "-session ' $(exit 7)"
+        turn = "-turn '\n$(exit 7)"
+        output = self.assert_started(session_id=session, turn_id=turn)
+        command = output["hookSpecificOutput"]["additionalContext"].split("\n", 1)[1]
+        result = subprocess.run(["bash", "-c", command + " " + shlex.quote("--worktree=" + str(linked))],
+                                env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(json.loads(result.stdout)["registered"], str(linked))
+        (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.request(linked, self.hook("Stop", session_id=session, turn_id=turn))
+
+    def test_registering_automatic_root_does_not_reset_its_baseline(self):
+        origin = self.repository("project")
+        self.assert_started()
+        (origin / "app.py").write_text("value = 2\n", encoding="utf-8")
+        self.register(origin)
+        request = self.request(origin, self.hook("Stop"))
+        self.assertEqual(request["files"][0]["before"]["text"], "value = 1\n")
+
+    def test_registration_verifies_git_worktree_list(self):
+        linked = self.worktree()
+        self.assert_started()
+        spec = importlib.util.spec_from_file_location("review_hook", str(HOOK))
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        real_git = hook.git
+
+        def missing_worktree(root, *args, **kwargs):
+            if args == ("worktree", "list", "--porcelain", "-z"):
+                return b""
+            return real_git(root, *args, **kwargs)
+
+        with mock.patch.object(hook, "git", missing_worktree):
+            with self.assertRaisesRegex(RuntimeError, "git worktree list"):
+                hook.register_worktree(self.root, "s", "t", linked)
+        self.assertFalse((linked / ".gpt-review-toolkit").exists())
+
     def test_all_direct_repositories_are_reviewed_with_separate_baselines(self):
         first = self.repository("first repo")
         second = self.repository("두번째\nrepo")
-        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assert_started()
         for index, root in enumerate((first, second)):
             (root / "app.py").write_text("value = {}\n".format(index + 2), encoding="utf-8")
         output = self.hook("Stop")
@@ -413,7 +608,7 @@ class WorkspaceReviewHookTests(unittest.TestCase):
         source = self.repository("source")
         documents = self.repository("documents")
         unchanged = self.repository("unchanged")
-        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assert_started()
         self.assertEqual(self.hook("Stop"), {})
         (source / "app.py").write_text("value = 2\n", encoding="utf-8")
         (documents / "README.md").write_text("documentation\n", encoding="utf-8")
@@ -426,7 +621,7 @@ class WorkspaceReviewHookTests(unittest.TestCase):
         direct = self.repository("direct")
         nested = self.repository("container/nested")
         (self.root / "linked-repo").symlink_to(nested, target_is_directory=True)
-        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assert_started()
         self.assertFalse((nested / ".gpt-review-toolkit").exists())
         (nested / "app.py").write_text("value = 2\n", encoding="utf-8")
         self.assertEqual(self.hook("Stop"), {})
@@ -435,7 +630,7 @@ class WorkspaceReviewHookTests(unittest.TestCase):
     def test_existing_git_repository_takes_precedence_over_children(self):
         root = self.repository("project")
         nested = self.repository("project/nested")
-        self.assertEqual(self.hook("UserPromptSubmit", cwd=str(root)), {})
+        self.assert_started(cwd=str(root))
         self.assertFalse((nested / ".gpt-review-toolkit").exists())
         (root / "app.py").write_text("value = 2\n", encoding="utf-8")
         self.request(root, self.hook("Stop", cwd=str(root)))
@@ -446,7 +641,7 @@ class WorkspaceReviewHookTests(unittest.TestCase):
                      ("worktree", "add", "-qb", "linked", str(self.root / "linked"))):
             subprocess.check_call(["git", "-C", str(origin)] + list(args), env=self.env)
         linked = self.root / "linked"
-        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assert_started()
         (linked / "app.py").write_text("value = 2\n", encoding="utf-8")
         self.request(linked, self.hook("Stop"))
         self.assertFalse((origin / ".gpt-review-toolkit").exists())
@@ -454,7 +649,7 @@ class WorkspaceReviewHookTests(unittest.TestCase):
     def test_repository_failure_does_not_prevent_other_reviews(self):
         broken = self.repository("a-broken")
         healthy = self.repository("z-healthy")
-        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assert_started()
         baseline = next((broken / ".gpt-review-toolkit").glob("*/baseline.json"))
         baseline.write_text("corrupt", encoding="utf-8")
         (healthy / "app.py").write_text("value = 2\n", encoding="utf-8")
@@ -500,7 +695,7 @@ class WorkspaceReviewHookTests(unittest.TestCase):
     def test_repositories_added_or_removed_during_turn_are_reported(self):
         removed = self.repository("removed")
         healthy = self.repository("healthy")
-        self.assertEqual(self.hook("UserPromptSubmit"), {})
+        self.assert_started()
         # Move it beyond the one-level discovery boundary, without deleting fixture data.
         (self.root / "archive").mkdir()
         removed.rename(self.root / "archive" / "removed")

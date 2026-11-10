@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Codex turn snapshots and a report-only Stop continuation (Python 3.6+)."""
 
+import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import stat
 import subprocess
 import sys
@@ -223,6 +225,77 @@ def discover_roots(cwd):
     return roots, True, errors
 
 
+def validate_root(root, check_worktrees=False):
+    actual = git(root, "rev-parse", "--show-toplevel")
+    if Path(os.fsdecode(actual[:-1])).resolve() != root:
+        raise RuntimeError("Git 작업 저장소의 루트 경로가 아닙니다: {}".format(root))
+    if check_worktrees:
+        # -z avoids Git's quoting of spaces, newlines and non-ASCII paths.
+        records = git(root, "worktree", "list", "--porcelain", "-z").split(b"\0")
+        registered = {Path(os.fsdecode(record[len(b"worktree "):])).resolve()
+                      for record in records if record.startswith(b"worktree ")}
+        if root not in registered:
+            raise RuntimeError("git worktree list에 등록된 경로가 아닙니다: {}".format(root))
+
+
+def load_session(path, session):
+    value = load(path)
+    if not value and not path.exists():
+        return {}
+    if value.get("version") != 1 or value.get("session_id") != session or not value.get("turn_id"):
+        raise ValueError("세션 등록 상태가 올바르지 않습니다: {}".format(path))
+    for key in ("worktrees", "repositories"):
+        items = value.get(key)
+        if not isinstance(items, list) or any(not isinstance(item, str) or not Path(item).is_absolute()
+                                              for item in items):
+            raise ValueError("세션 작업 경로 목록이 올바르지 않습니다: {}".format(path))
+    return value
+
+
+def read_baseline(directory, turn):
+    baseline = load(directory / "baseline.json")
+    if baseline.get("turn_id") != turn:
+        raise RuntimeError("이번 턴의 시작 스냅샷이 없습니다. 현재 상태로 재생성하지 말고 미검토로 보고하세요")
+    if (not isinstance(baseline.get("files"), dict) or "head" not in baseline
+            or not isinstance(baseline.get("skipped"), list)):
+        raise ValueError("시작 스냅샷이 올바르지 않습니다")
+    return baseline
+
+
+def register_worktree(cwd, session, turn, worktree):
+    """Enroll before snapshotting so a failed snapshot remains visible at Stop."""
+    path = state_directory(cwd, session) / "session.json"
+    state = load_session(path, session)
+    if state.get("turn_id") != turn:
+        raise RuntimeError("이번 턴의 세션 등록 상태가 없습니다. 시작 훅의 cwd/session_id/turn_id를 사용하세요")
+    validate_root(worktree, check_worktrees=True)
+    known = str(worktree) in state["worktrees"] or str(worktree) in state["repositories"]
+    if str(worktree) not in state["worktrees"]:
+        state["worktrees"].append(str(worktree))
+        save(path, state)
+    directory = state_directory(worktree, session)
+    baseline_path = directory / "baseline.json"
+    # Re-registering must never hide edits or repair a missing/corrupt baseline
+    # with an after-the-fact snapshot. New targets may already have an automatic baseline.
+    if known or load(baseline_path).get("turn_id") == turn:
+        read_baseline(directory, turn)
+    else:
+        handle_repository(worktree, session, turn, "UserPromptSubmit")
+    return {"registered": str(worktree), "baseline": str(baseline_path), "turn_id": turn}
+
+
+def registration_notice(cwd, session, turn):
+    argv = ["python3", str(Path(__file__).resolve()), "register", "--cwd=" + str(cwd),
+            "--session-id=" + session, "--turn-id=" + turn]
+    command = " ".join(shlex.quote(arg) for arg in argv)
+    return ("gpt-review-toolkit: 다른 워크트리(중첩/새로 생성한 경로 포함)에서 작업한다면 "
+            "파일 수정·포맷·커밋 전에 아래 명령에 --worktree=<작업 루트의 절대 경로>를 "
+            "안전하게 인용하여 추가하고 순차 실행하세요. git worktree list --porcelain으로 경로를 확인하고, "
+            "등록 결과 registered/baseline과 종료 코드 0을 확인한 뒤 수정하세요. "
+            "세션에서 사용할 경로만 등록하세요. 이미 수정한 경로를 뒤늦게 등록하여 시작 기준으로 삼지 말고 "
+            "감지 실패·미검토로 알리세요. 사용자 결정 대기 중에는 실행하지 마세요.\n" + command)
+
+
 def handle_repository(root, session, turn, event):
     directory = state_directory(root, session)
     baseline_path = directory / "baseline.json"
@@ -233,9 +306,7 @@ def handle_repository(root, session, turn, event):
         save(baseline_path, current)
         save(cache_path, current)
         return None
-    baseline = load(baseline_path)
-    if baseline.get("turn_id") != turn:
-        raise RuntimeError("이번 턴의 시작 스냅샷이 없습니다. 다음 사용자 요청부터 자동 리뷰가 가능합니다")
+    baseline = read_baseline(directory, turn)
     current = snapshot(root, load(cache_path).get("files", {}), known_paths=baseline["files"])
     before, after = baseline["files"], current["files"]
     changes = []
@@ -272,27 +343,27 @@ def handle(data):
     if not isinstance(session, str) or not session or not isinstance(turn, str) or not turn:
         raise ValueError("session_id/turn_id가 없어 이번 턴의 변경을 구분할 수 없습니다")
     cwd = Path(data["cwd"]).resolve()
-    roots, workspace, errors = discover_roots(cwd)
+    roots, _, errors = discover_roots(cwd)
     requests = []
-    if workspace:
-        # Remember membership so a disappeared repository cannot silently look clean.
-        workspace_path = state_directory(cwd, session) / "workspace.json"
-        if event == "UserPromptSubmit":
-            save(workspace_path, {"turn_id": turn, "repositories": [root.name for root in roots]})
-        else:
-            baseline = load(workspace_path)
-            if baseline.get("turn_id") != turn:
-                raise RuntimeError("이번 턴의 시작 저장소 목록이 없습니다. 다음 사용자 요청부터 자동 리뷰가 가능합니다")
-            names = baseline["repositories"]
-            if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
-                raise ValueError("시작 저장소 목록이 올바르지 않습니다")
-            missing = set(names) - {root.name for root in roots}
-            errors.extend("{}: 시작 시 발견한 Git 저장소에 접근할 수 없습니다".format(cwd / name)
-                          for name in sorted(missing))
+    session_path = state_directory(cwd, session) / "session.json"
+    state = load_session(session_path, session)
+    new_turn = state.get("turn_id") != turn
+    if event == "UserPromptSubmit" and new_turn:
+        state = {"version": 1, "session_id": session, "turn_id": turn,
+                 "worktrees": state.get("worktrees", []), "repositories": [str(root) for root in roots]}
+        save(session_path, state)
+    elif new_turn:
+        raise RuntimeError("이번 턴의 시작 저장소 목록이 없습니다. 다음 사용자 요청부터 자동 리뷰가 가능합니다")
+    # Always visit remembered paths, even if discovery no longer finds them.
+    roots = sorted(set(roots) | {Path(name) for name in state["repositories"] + state["worktrees"]})
     if not roots and not errors:
-        raise RuntimeError("현재 폴더와 바로 하위 1단계에서 Git 작업 저장소를 찾지 못했습니다")
+        errors.append("현재 폴더와 바로 하위 1단계에서 Git 작업 저장소를 찾지 못했습니다")
     for root in roots:
         try:
+            validate_root(root)
+            if event == "UserPromptSubmit" and not new_turn:
+                read_baseline(state_directory(root, session), turn)
+                continue
             request = handle_repository(root, session, turn, event)
             if request is not None:
                 requests.append(request)
@@ -301,6 +372,12 @@ def handle(data):
     output = {}
     if errors:
         output["systemMessage"] = "gpt-review-toolkit: 자동 리뷰 감지 실패 — " + "\n".join(errors)
+    if event == "UserPromptSubmit":
+        # systemMessage is UI-only; the agent needs this before its first edit.
+        output["hookSpecificOutput"] = {
+            "hookEventName": event,
+            "additionalContext": (output.get("systemMessage", "") + "\n"
+                                  + registration_notice(cwd, session, turn)).lstrip()}
     if not requests:
         return output
     reason = """{marker}
@@ -324,16 +401,31 @@ def handle(data):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command")
+    registration = commands.add_parser("register", help="작업 경로 등록 및 수정 전 스냅샷 확보")
+    for option in ("cwd", "session-id", "turn-id", "worktree"):
+        registration.add_argument("--" + option, required=True)
+    args = parser.parse_args()
+    exit_code = 0
     try:
-        data = json.load(sys.stdin)
-        if not isinstance(data, dict):
-            raise ValueError("훅 입력은 JSON 객체여야 합니다")
-        output = handle(data)
+        if args.command == "register":
+            if not args.session_id or not args.turn_id:
+                raise ValueError("session_id/turn_id가 필요합니다")
+            output = register_worktree(Path(args.cwd).resolve(), args.session_id, args.turn_id,
+                                       Path(args.worktree).resolve())
+        else:
+            data = json.load(sys.stdin)
+            if not isinstance(data, dict):
+                raise ValueError("훅 입력은 JSON 객체여야 합니다")
+            output = handle(data)
     except DETECTION_ERRORS as error:
         # A broken baseline must be visible, never interpreted as a clean review.
         output = {"systemMessage": "gpt-review-toolkit: 자동 리뷰 감지 실패 — {}".format(error)}
+        exit_code = 1 if args.command else 0
     print(json.dumps(output, ensure_ascii=True))
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
