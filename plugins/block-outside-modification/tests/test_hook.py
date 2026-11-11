@@ -125,6 +125,46 @@ class HookTests(unittest.TestCase):
         self.check('touch new.txt # /outside/comment')
         self.check("touch 'semi;colon.txt' 'greater>than.txt'")
 
+    def test_workspace_task_with_quoted_greater_than(self):
+        script = shlex.quote(str(self.outside / 'make_workspace.py'))
+        for dry_run in ('', ' --dry-run'):
+            with self.subTest(dry_run=dry_run):
+                command = ' \\\n  '.join([
+                    'python3 ' + script, '--root ' + shlex.quote(str(self.project)),
+                    '--base production',
+                    "--task 'RO-6671 회원설정 > 가입추가항목 설정 페이지 제거'" + dry_run])
+                self.check(command)
+
+    def test_python_file_arguments_are_data(self):
+        script = shlex.quote(str(self.outside / 'script.py'))
+        for interpreter in ('python', 'python2.7', 'python3', '/usr/bin/python3.13'):
+            for options in ('', '-B', '-Iu', '-W ignore', '-Wignore', '-X dev', '-Xdev', '--'):
+                with self.subTest(interpreter=interpreter, options=options):
+                    self.check("{} {} {} --task 'mkdir > rm' -c 'touch > text'".format(
+                        interpreter, options, script))
+
+    def test_python_file_keeps_redirect_targets(self):
+        script = shlex.quote(str(self.outside / 'script.py'))
+        command = "python3 {} --task 'a > b'".format(script)
+        self.check(command + ' > result.txt')
+        for operator in ('>', '>>', '2>', '&>'):
+            with self.subTest(operator=operator):
+                self.check('{} {} {}'.format(
+                    command, operator, shlex.quote(str(self.outside / 'result.txt'))), True)
+        self.check(command + ' && touch ' + shlex.quote(str(self.outside / 'new.txt')), True)
+
+    def test_python_code_and_unknown_modes_keep_fallback(self):
+        target = shlex.quote(str(self.outside / 'result.txt'))
+        for options in ('-c', '-Bc', '-W ignore -c', '-X dev -c',
+                        '-m module', '-', '--unknown-option'):
+            with self.subTest(options=options):
+                self.check("python3 {} 'echo x >' {}".format(options, target), True)
+        self.check("bash -c 'echo x >' " + target, True)
+        self.check("custom-python script.py 'echo x >' " + target, True)
+
+    def test_python_stdin_after_option_separator_keeps_fallback(self):
+        self.check("python3 -- - 'echo x >' " + shlex.quote(str(self.outside / 'result.txt')), True)
+
     def test_tee_and_sed(self):
         target = shlex.quote(str(self.outside / 'input.txt'))
         self.check('echo x | tee {}'.format(target), True)

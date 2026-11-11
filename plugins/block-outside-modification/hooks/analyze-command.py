@@ -282,6 +282,29 @@ def sed_targets(args):
     return files if inplace else []
 
 
+def is_python_file_command(name, args):
+    """파일 실행만 식별한다. 인라인 코드/모듈/표준입력은 기존 검사에 맡긴다."""
+    if not re.fullmatch(r'python(?:[23](?:\.\d+)?)?', name):
+        return False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == '--':
+            return index + 1 < len(args) and args[index + 1] not in {'', '-'}
+        if not arg.startswith('-'):
+            return bool(arg)
+        if re.fullmatch(r'-[BEIOsSu]+', arg):
+            index += 1
+        elif arg in {'-W', '-X'}:
+            index += 2
+        elif arg.startswith(('-W', '-X')):
+            index += 1
+        else:
+            # -c/-m/- 및 알 수 없는 옵션을 파일 경로로 오인하지 않는다.
+            return False
+    return False
+
+
 def modification_targets(name, args):
     if name in {'cp', 'mv', 'ln', 'install'}:
         return copy_targets(name, args)
@@ -307,6 +330,11 @@ def modification_targets(name, args):
                 'xargs', 'find', 'if', 'for', 'while', 'until', 'case', 'function',
                 'pushd', 'popd', 'exec', 'command'}:
         raise Unsupported('명령별 정적 분석 미지원')
+    if is_python_file_command(name, args):
+        # 스크립트 경로는 실행할 입력이며 뒤의 인자는 데이터다. 인자의 >나
+        # 수정 키워드를 쉘 코드로 재해석하지 않는다. 실제 리다이렉션은
+        # analyze()에서 별도로 검사하며 스크립트 내부 동작은 분석하지 않는다.
+        return []
     # 알 수 없는 명령에 기존 수정 키워드가 있으면 기존 검사를 적용한다.
     if any(re.search(r'\b(rm|rmdir|mv|cp|tee|truncate|chmod|chown|chgrp|touch|mkdir|ln|install|patch|dd|unlink|sed)\b|>', a)
            for a in [name] + args) and name not in {'echo', 'printf'}:
